@@ -814,7 +814,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
 // ==========================================
 // 1. Supabase 連線設定 (重新命名為 supabaseDb 完美避開全域宣告衝突)
 // ==========================================
-const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co/rest/v1/';
+const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmcmVsanhsZ2ZycXNsdHN3cGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5OTcwMjgsImV4cCI6MjA5NDU3MzAyOH0.IHSE6EuyNNeKVtbCTnB4Dtow_7eLS21elUVH4V0eug0';
 const supabaseDb = supabase.createClient(supabaseUrl, supabaseAnonKey);
 
