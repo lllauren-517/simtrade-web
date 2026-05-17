@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SimTrade Pro — 模擬交易沙盒平台</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg:       #07090f;
+  --bg2:      #0d1117;
+  --bg3:      #141a26;
+  --bg4:      #1c2538;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.14);
+  --text:     #d4dbe8;
+  --text2:    #7a8499;
+  --text3:    #444d60;
+  --teal:     #00e5c5;
+  --teal-dim: #00896e;
+  --teal-bg:  rgba(0,229,197,0.07);
+  --amber:    #f0a020;
+  --amber-dim:#8a5c10;
+  --amber-bg: rgba(240,160,32,0.07);
+  --red:      #ff4c52;
+  --red-dim:  #8b1a1e;
+  --red-bg:   rgba(255,76,82,0.08);
+  --green:    #34d08a;
+  --green-dim:#0e5c35;
+  --blue:     #4a8fff;
+  --blue-bg:  rgba(74,143,255,0.08);
+  --purple:   #a78bfa;
+  --mono: 'JetBrains Mono', 'Consolas', monospace;
+  --sans: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;min-height:100vh;overflow-x:hidden}
+a{color:var(--blue)}
+input,select,textarea{background:var(--bg3);border:1px solid var(--border2);color:var(--text);border-radius:4px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(74,143,255,0.15)}
+select option{background:var(--bg3)}
+button{cursor:pointer;border:none;border-radius:4px;font-family:var(--sans);font-size:13px;font-weight:500;padding:7px 14px;transition:all .15s}
+.btn{background:var(--bg4);border:1px solid var(--border2);color:var(--text);padding:7px 14px}
+.btn:hover{background:var(--bg3);border-color:var(--border2)}
+.btn-primary{background:var(--blue);color:#fff;border:1px solid transparent}
+.btn-primary:hover{opacity:.88}
+.btn-danger{background:var(--red);color:#fff;border:1px solid transparent}
+.btn-danger:hover{opacity:.88}
+.btn-success{background:var(--green);color:#07090f;border:1px solid transparent}
+.btn-success:hover{opacity:.88}
+.btn-warn{background:var(--amber);color:#07090f;border:1px solid transparent}
+.btn-warn:hover{opacity:.88}
+.btn-sm{padding:4px 10px;font-size:12px}
+
+/* Layout */
+#app{display:flex;flex-direction:column;height:100vh}
+#header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:52px;display:flex;align-items:center;gap:20px;flex-shrink:0;z-index:100}
+#header h1{font-family:var(--mono);font-size:15px;font-weight:500;color:var(--text);letter-spacing:1px}
+#header h1 span{color:var(--teal)}
+.header-group{display:flex;align-items:center;gap:8px;margin-left:auto}
+.group-badge{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1px solid var(--border2);font-size:12px;font-weight:500;font-family:var(--mono)}
+.group-badge.etf{color:var(--teal);border-color:var(--teal-dim);background:var(--teal-bg)}
+.group-badge.stock{color:var(--amber);border-color:var(--amber-dim);background:var(--amber-bg)}
+.group-badge .dot{width:7px;height:7px;border-radius:50%}
+.group-badge.etf .dot{background:var(--teal)}
+.group-badge.stock .dot{background:var(--amber)}
+.group-badge.frozen .dot{background:var(--red);animation:pulse 1s infinite}
+.group-badge.frozen{color:var(--red);border-color:var(--red-dim)}
+#clock{font-family:var(--mono);font-size:12px;color:var(--text2);white-space:nowrap}
+
+#main{display:flex;flex:1;overflow:hidden}
+#sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sidebar-section{padding:14px 0}
+.sidebar-label{font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;padding:0 16px 8px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:var(--text2);border-left:2px solid transparent;transition:all .15s;font-size:13px}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--bg3);color:var(--text);border-left-color:var(--blue)}
+.nav-item.active.etf-role{border-left-color:var(--teal)}
+.nav-item.active.middle-role{border-left-color:var(--amber)}
+.nav-item.active.back-role{border-left-color:var(--purple)}
+.nav-item.active.admin-role{border-left-color:var(--red)}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.sidebar-divider{border:none;border-top:1px solid var(--border);margin:6px 16px}
+.mini-stat{padding:6px 16px;display:flex;justify-content:space-between;align-items:center}
+.mini-stat-label{font-size:11px;color:var(--text3)}
+.mini-stat-val{font-family:var(--mono);font-size:12px;font-weight:500}
+
+#content{flex:1;overflow-y:auto;padding:20px}
+.panel{display:none}
+.panel.active{display:block}
+
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.card-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:12px;font-weight:700;letter-spacing:.5px;color:var(--text2);text-transform:uppercase}
+.card-body{padding:16px}
+.card-sm .card-body{padding:12px}
+
+/* Grid helpers */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grid-auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+
+/* Metric cards */
+.metric{background:var(--bg3);border-radius:6px;padding:12px 14px}
+.metric-label{font-size:11px;color:var(--text3);margin-bottom:4px}
+.metric-val{font-family:var(--mono);font-size:22px;font-weight:500}
+.metric-val.up{color:var(--green)}
+.metric-val.down{color:var(--red)}
+.metric-val.warn{color:var(--amber)}
+.metric-val.neutral{color:var(--text)}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* Tables */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.5px;padding:8px 10px;border-bottom:1px solid var(--border);text-transform:uppercase}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(255,255,255,.02)}
+.tbl .mono{font-family:var(--mono);font-size:12px}
+.up{color:var(--green)}
+.down{color:var(--red)}
+.neutral{color:var(--text2)}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;font-family:var(--mono)}
+.badge-etf{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-dim)}
+.badge-stock{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-dim)}
+.badge-pending{background:rgba(74,143,255,.1);color:var(--blue);border:1px solid rgba(74,143,255,.3)}
+.badge-approved{background:rgba(52,208,138,.1);color:var(--green);border:1px solid rgba(52,208,138,.3)}
+.badge-rejected{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim)}
+.badge-executed{background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.3)}
+.badge-buy{background:rgba(52,208,138,.1);color:var(--green);border:1px solid rgba(52,208,138,.3)}
+.badge-sell{background:var(--red-bg);color:var(--red);border:1px solid var(--red-dim)}
+
+/* Form */
+.form-row{margin-bottom:12px}
+.form-label{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;display:block;letter-spacing:.3px}
+.form-row-inline{display:flex;gap:8px;align-items:flex-end}
+.form-hint{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* Scorecard */
+.scorecard{background:var(--bg3);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.scorecard-header{padding:10px 14px;background:var(--bg4);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
+.scorecard-row{display:flex;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border)}
+.scorecard-row:last-child{border-bottom:none}
+.scorecard-num{width:22px;height:22px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0;margin-top:1px}
+.scorecard-content{flex:1}
+.scorecard-q{font-size:12px;font-weight:500;margin-bottom:6px}
+.scorecard-score{display:flex;align-items:center;gap:6px;margin-top:6px}
+.score-dot{width:22px;height:22px;border-radius:50%;border:1px solid var(--border2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);transition:all .15s}
+.score-dot.selected-1{background:var(--red);border-color:var(--red);color:#fff}
+.score-dot.selected-2{background:var(--amber);border-color:var(--amber);color:#07090f}
+.score-dot.selected-3{background:var(--blue);border-color:var(--blue);color:#fff}
+.score-dot.selected-4{background:var(--green);border-color:var(--green);color:#07090f}
+.score-dot.selected-5{background:var(--teal);border-color:var(--teal);color:#07090f}
+
+/* Risk bar */
+.risk-bar-wrap{background:var(--bg3);border-radius:3px;height:8px;overflow:hidden;margin:6px 0}
+.risk-bar{height:100%;border-radius:3px;transition:width .4s;background:var(--green)}
+.risk-bar.warn{background:var(--amber)}
+.risk-bar.danger{background:var(--red)}
+
+/* Price ticker */
+.ticker-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.ticker-row:hover{background:rgba(255,255,255,.02)}
+.ticker-row:last-child{border-bottom:none}
+.ticker-symbol{font-family:var(--mono);font-size:13px;font-weight:500;width:60px}
+.ticker-name{color:var(--text2);flex:1;font-size:12px}
+.ticker-price{font-family:var(--mono);font-size:14px;font-weight:500;text-align:right;min-width:70px}
+.ticker-chg{font-family:var(--mono);font-size:12px;text-align:right;min-width:70px}
+.ticker-type{font-size:10px;padding:1px 5px;border-radius:2px;font-weight:600}
+.ticker-type.etf{background:var(--teal-bg);color:var(--teal)}
+.ticker-type.letf{background:var(--amber-bg);color:var(--amber)}
+.ticker-type.ietf{background:var(--red-bg);color:var(--red)}
+.ticker-type.stock{background:var(--blue-bg);color:var(--blue)}
+
+/* Force liquidation warning */
+.danger-zone{background:var(--red-bg);border:1px solid var(--red-dim);border-radius:8px;padding:16px;margin-bottom:16px}
+.danger-zone h3{color:var(--red);font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+
+/* Log entries */
+.log-entry{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.log-entry:last-child{border-bottom:none}
+.log-time{font-family:var(--mono);color:var(--text3);white-space:nowrap;width:54px;flex-shrink:0}
+.log-level{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:1px}
+.log-level.info{background:var(--blue)}
+.log-level.success{background:var(--green)}
+.log-level.warn{background:var(--amber)}
+.log-level.danger{background:var(--red)}
+.log-msg{flex:1;color:var(--text2);line-height:1.4}
+.log-msg strong{color:var(--text)}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:8px 16px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;font-size:13px;margin-bottom:-1px;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:500}
+
+/* Freeze overlay on group */
+.freeze-banner{background:var(--red-bg);border:1px solid var(--red-dim);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.freeze-banner-icon{font-size:18px}
+.freeze-banner-text{flex:1}
+.freeze-banner-text strong{color:var(--red);display:block;font-size:13px}
+.freeze-banner-text span{color:var(--text2);font-size:12px}
+
+/* Charts */
+.chart-wrap{position:relative;width:100%;height:200px}
+.chart-wrap.tall{height:260px}
+
+/* Scenario command card */
+.scenario-card{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:10px}
+.scenario-card h4{font-size:13px;font-weight:500;margin-bottom:4px}
+.scenario-card p{font-size:12px;color:var(--text2);margin-bottom:10px}
+.scenario-card .meta{font-size:11px;color:var(--text3);margin-top:8px;font-family:var(--mono)}
+
+/* Animations */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes flash{0%{background:rgba(0,229,197,.2)}100%{background:transparent}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.price-flash{animation:flash .5s ease-out}
+.toast-area{position:fixed;top:60px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:1000;pointer-events:none}
+.toast{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:10px 14px;font-size:12px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideIn .2s ease;pointer-events:auto;max-width:280px}
+.toast.success{border-left:3px solid var(--green)}
+.toast.danger{border-left:3px solid var(--red)}
+.toast.warn{border-left:3px solid var(--amber)}
+.toast.info{border-left:3px solid var(--blue)}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* Modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:10px;width:580px;max-width:95vw;max-height:90vh;overflow:hidden;display:flex;flex-direction:column}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:500}
+.modal-close{background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:2px 6px}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
+/* Section spacing */
+.section{margin-bottom:20px}
+.section-title{font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+.mb-8{margin-bottom:8px}
+.mb-12{margin-bottom:12px}
+.mb-16{margin-bottom:16px}
+.mb-20{margin-bottom:20px}
+.mt-8{margin-top:8px}
+.mt-12{margin-top:12px}
+.flex{display:flex}
+.flex-center{display:flex;align-items:center}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+.gap-8{gap:8px}
+.gap-12{gap:12px}
+.gap-16{gap:16px}
+.text-right{text-align:right}
+.text-sm{font-size:12px}
+.text-xs{font-size:11px}
+.text-muted{color:var(--text2)}
+.text-warn{color:var(--amber)}
+.text-danger{color:var(--red)}
+.text-success{color:var(--green)}
+.text-info{color:var(--blue)}
+.mono{font-family:var(--mono)}
+.w-full{width:100%}
+hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border2)}
+
+/* Report */
+.report-section{margin-bottom:24px}
+.report-section h3{font-size:13px;font-weight:700;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border);color:var(--text)}
+.comparison-table td{font-family:var(--mono);font-size:12px}
+.attribution-bar{display:flex;height:24px;border-radius:4px;overflow:hidden;margin:8px 0}
+.attr-beta{background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:600;transition:width .5s}
+.attr-alpha{background:var(--green);display:flex;align-items:center;justify-content:center;font-size:10px;color:#07090f;font-weight:600;transition:width .5s}
+.attr-noise{background:var(--text3);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--bg);font-weight:600;transition:width .5s}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <header id="header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h1><span>Sim</span>Trade Pro</h1>
+      <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">v1.0 | SANDBOX</span>
+    </div>
+    <div class="header-group">
+      <div id="etf-status" class="group-badge etf"><div class="dot"></div>ETF 組 <span id="etf-nav-hdr" style="font-size:11px">—</span></div>
+      <div id="stock-status" class="group-badge stock"><div class="dot"></div>個股 組 <span id="stock-nav-hdr" style="font-size:11px">—</span></div>
+      <div style="width:1px;height:20px;background:var(--border2);margin:0 4px"></div>
+      <div id="clock"></div>
+    </div>
+  </header>
+
+  <div id="main">
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">角色選擇</div>
+        <div class="nav-item active etf-role" data-panel="front" onclick="switchPanel('front')">
+          <span class="nav-icon">📈</span>前台交易員
+        </div>
+        <div class="nav-item middle-role" data-panel="middle" onclick="switchPanel('middle')">
+          <span class="nav-icon">🛡️</span>中台風控
+        </div>
+        <div class="nav-item back-role" data-panel="back" onclick="switchPanel('back')">
+          <span class="nav-icon">🗄️</span>後台帳務
+        </div>
+        <div class="nav-item admin-role" data-panel="admin" onclick="switchPanel('admin')">
+          <span class="nav-icon">⚡</span>總行指令
+        </div>
+      </div>
+      <hr class="sidebar-divider">
+      <div class="sidebar-section">
+        <div class="sidebar-label">即時概覽</div>
+        <div class="mini-stat"><span class="mini-stat-label">待審訂單</span><span class="mini-stat-val" id="sb-pending" style="color:var(--blue)">0</span></div>
+        <div class="mini-stat"><span class="mini-stat-label">ETF 回撤</span><span class="mini-stat-val" id="sb-etf-dd" style="color:var(--green)">0.00%</span></div>
+        <div class="mini-stat"><span class="mini-stat-label">個股 回撤</span><span class="mini-stat-val" id="sb-stk-dd" style="color:var(--green)">0.00%</span></div>
+        <div class="mini-stat"><span class="mini-stat-label">交易筆數</span><span class="mini-stat-val" id="sb-trades">0</span></div>
+      </div>
+    </nav>
+
+    <!-- CONTENT -->
+    <main id="content">
+
+      <!-- ===== FRONT OFFICE PANEL ===== -->
+      <div id="panel-front" class="panel active">
+        <div id="front-freeze-etf" class="freeze-banner" style="display:none">
+          <span class="freeze-banner-icon">🔒</span>
+          <div class="freeze-banner-text">
+            <strong>ETF 組 已遭中台凍結</strong>
+            <span>前台交易權限已被暫停，請聯繫中台風控解除</span>
+          </div>
+        </div>
+        <div id="front-freeze-stock" class="freeze-banner" style="display:none">
+          <span class="freeze-banner-icon">🔒</span>
+          <div class="freeze-banner-text">
+            <strong>個股組 已遭中台凍結</strong>
+            <span>前台交易權限已被暫停，請聯繫中台風控解除</span>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:16px">
+          <!-- Market Watch -->
+          <div class="card" style="grid-row:span 2">
+            <div class="card-header">
+              <span class="card-title">行情報價</span>
+              <span style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="mkt-time">--:--:--</span>
+            </div>
+            <div style="padding:4px 0">
+              <div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:10px">
+                <span style="font-size:10px;font-weight:700;color:var(--teal);letter-spacing:.5px;flex:1">▶ ETF 商品</span>
+              </div>
+              <div id="ticker-etf"></div>
+              <div style="padding:6px 10px;border-bottom:1px solid var(--border);border-top:1px solid var(--border);display:flex;gap:10px;margin-top:4px">
+                <span style="font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.5px;flex:1">▶ 個股商品</span>
+              </div>
+              <div id="ticker-stock"></div>
+            </div>
+          </div>
+
+          <!-- Order Entry -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">下單入口</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm" id="grp-btn-etf" onclick="setOrderGroup('etf')" style="color:var(--teal);border-color:var(--teal-dim)">ETF 組</button>
+                <button class="btn btn-sm" id="grp-btn-stk" onclick="setOrderGroup('stock')">個股組</button>
+              </div>
+            </div>
+            <div class="card-body card-sm">
+              <div class="form-row">
+                <label class="form-label">商品代號</label>
+                <select id="order-symbol" onchange="onSymbolChange()">
+                  <option value="">— 選擇商品 —</option>
+                </select>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+                <div>
+                  <label class="form-label">方向</label>
+                  <select id="order-side">
+                    <option value="buy">買入 BUY</option>
+                    <option value="sell">賣出 SELL</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label">數量（股/單位）</label>
+                  <input type="number" id="order-qty" min="1" value="100" placeholder="100">
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="form-label">參考價格</label>
+                <input type="text" id="order-price-display" readonly style="background:var(--bg4);color:var(--text2);cursor:default">
+              </div>
+              <div class="form-row">
+                <label class="form-label">預估金額</label>
+                <input type="text" id="order-amount-display" readonly style="background:var(--bg4);color:var(--green);font-family:var(--mono);cursor:default">
+              </div>
+              <div style="display:flex;gap:8px;margin-top:4px">
+                <button class="btn btn-primary w-full" onclick="openScorecardModal()">填寫交易計畫書 →</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Positions -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">我的持倉</span>
+              <div style="display:flex;gap:6px">
+                <span id="pos-grp-label" class="badge badge-etf">ETF 組</span>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="tbl" id="positions-table">
+                <thead><tr><th>商品</th><th>數量</th><th>均價</th><th>現價</th><th>損益</th><th>倉位佔比</th><th>風險貢獻</th></tr></thead>
+                <tbody id="positions-body">
+                  <tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">尚無持倉</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk-Return Metrics Row -->
+        <div class="grid-4 mb-16">
+          <div class="metric">
+            <div class="metric-label">組合夏普值 Sharpe</div>
+            <div class="metric-val neutral mono" id="front-sharpe">—</div>
+            <div class="metric-sub">年化風險調整後報酬</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">組合波動率 σ</div>
+            <div class="metric-val neutral mono" id="front-vol">—</div>
+            <div class="metric-sub">加權平均年化波動率</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">風險報酬比 R/R</div>
+            <div class="metric-val neutral mono" id="front-rr">—</div>
+            <div class="metric-sub">累計報酬 ÷ 最大回撤</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">最大回撤 Max DD</div>
+            <div class="metric-val neutral mono" id="front-dd">0.00%</div>
+            <div class="metric-sub" id="front-dd-sub">峰值 NAV: —</div>
+          </div>
+        </div>
+
+        <!-- Pending My Orders -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">我的訂單</span>
+            <span class="badge badge-pending" id="my-orders-count">0 筆待審</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead><tr><th>時間</th><th>組別</th><th>商品</th><th>方向</th><th>數量</th><th>參考價</th><th>狀態</th><th>中台意見</th></tr></thead>
+              <tbody id="my-orders-body">
+                <tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">尚無訂單記錄</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== MIDDLE OFFICE PANEL ===== -->
+      <div id="panel-middle" class="panel">
+        <div class="grid-4 mb-16">
+          <div class="metric"><div class="metric-label">ETF 組 NAV</div><div class="metric-val neutral mono" id="m-etf-nav">—</div><div class="metric-sub" id="m-etf-ret">—</div></div>
+          <div class="metric"><div class="metric-label">ETF 最大回撤</div><div class="metric-val" id="m-etf-dd">0.00%</div><div class="metric-sub" id="m-etf-dd-sub">限制: 10.00%</div></div>
+          <div class="metric"><div class="metric-label">個股組 NAV</div><div class="metric-val neutral mono" id="m-stk-nav">—</div><div class="metric-sub" id="m-stk-ret">—</div></div>
+          <div class="metric"><div class="metric-label">個股 最大回撤</div><div class="metric-val" id="m-stk-dd">0.00%</div><div class="metric-sub" id="m-stk-dd-sub">限制: 10.00%</div></div>
+        </div>
+
+        <!-- Risk bars -->
+        <div class="grid-2 mb-16">
+          <div class="card card-sm">
+            <div class="card-header">
+              <span class="card-title" style="color:var(--teal)">ETF 組 風控狀態</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm btn-success" onclick="unfreezeGroup('etf')" id="btn-unfreeze-etf" style="display:none">解除凍結</button>
+                <button class="btn btn-sm btn-danger" onclick="forceClose('etf')" id="btn-force-etf">強制平倉</button>
+              </div>
+            </div>
+            <div class="card-body card-sm">
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span class="text-xs text-muted">回撤使用率</span>
+                <span class="text-xs mono" id="etf-dd-pct">0% / 10%</span>
+              </div>
+              <div class="risk-bar-wrap"><div class="risk-bar" id="etf-dd-bar" style="width:0%"></div></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+                <div><div class="text-xs text-muted">夏普值</div><div class="text-sm mono" id="etf-sharpe">—</div></div>
+                <div><div class="text-xs text-muted">槓桿倍數</div><div class="text-sm mono" id="etf-lev">1.0×</div></div>
+                <div><div class="text-xs text-muted">資金使用率</div><div class="text-sm mono" id="etf-util">0%</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card card-sm">
+            <div class="card-header">
+              <span class="card-title" style="color:var(--amber)">個股組 風控狀態</span>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-sm btn-success" onclick="unfreezeGroup('stock')" id="btn-unfreeze-stock" style="display:none">解除凍結</button>
+                <button class="btn btn-sm btn-danger" onclick="forceClose('stock')" id="btn-force-stock">強制平倉</button>
+              </div>
+            </div>
+            <div class="card-body card-sm">
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                <span class="text-xs text-muted">回撤使用率</span>
+                <span class="text-xs mono" id="stk-dd-pct">0% / 10%</span>
+              </div>
+              <div class="risk-bar-wrap"><div class="risk-bar" id="stk-dd-bar" style="width:0%"></div></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+                <div><div class="text-xs text-muted">夏普值</div><div class="text-sm mono" id="stk-sharpe">—</div></div>
+                <div><div class="text-xs text-muted">槓桿倍數</div><div class="text-sm mono" id="stk-lev">1.0×</div></div>
+                <div><div class="text-xs text-muted">資金使用率</div><div class="text-sm mono" id="stk-util">0%</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pending Orders for Approval -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <span class="card-title">待審訂單 — Maker-Checker</span>
+            <span class="badge badge-pending" id="pending-count-badge">0 筆</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead><tr><th>時間</th><th>組別</th><th>商品</th><th>方向</th><th>數量</th><th>金額</th><th>計分卡</th><th>操作</th></tr></thead>
+              <tbody id="approval-body">
+                <tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px">目前無待審訂單</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Limit Settings -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">風控參數設定</span></div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div>
+                <label class="form-label">ETF 組最大回撤紅線 (%)</label>
+                <input type="number" id="etf-dd-limit" value="10" min="1" max="30" onchange="updateRiskLimits()">
+              </div>
+              <div>
+                <label class="form-label">個股組最大回撤紅線 (%)</label>
+                <input type="number" id="stk-dd-limit" value="10" min="1" max="30" onchange="updateRiskLimits()">
+              </div>
+              <div>
+                <label class="form-label">ETF 組單筆最大倉位 (%)</label>
+                <input type="number" id="etf-conc-limit" value="30" min="5" max="100">
+              </div>
+              <div>
+                <label class="form-label">個股組單筆最大倉位 (%)</label>
+                <input type="number" id="stk-conc-limit" value="30" min="5" max="100">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== BACK OFFICE PANEL ===== -->
+      <div id="panel-back" class="panel">
+        <div class="tabs">
+          <div class="tab active" onclick="switchBackTab('nav')">NAV 結算</div>
+          <div class="tab" onclick="switchBackTab('log')">營運日誌</div>
+          <div class="tab" onclick="switchBackTab('report')">績效報告</div>
+        </div>
+
+        <!-- NAV Tab -->
+        <div id="back-nav" class="back-tab">
+          <div class="grid-2 mb-16">
+            <div class="card">
+              <div class="card-header"><span class="card-title" style="color:var(--teal)">ETF 組 NAV 計算</span></div>
+              <div class="card-body">
+                <div class="grid-2" style="gap:8px;margin-bottom:12px">
+                  <div class="metric"><div class="metric-label">現金部位</div><div class="metric-val neutral mono" id="b-etf-cash">—</div></div>
+                  <div class="metric"><div class="metric-label">股票市值</div><div class="metric-val neutral mono" id="b-etf-mktval">—</div></div>
+                  <div class="metric"><div class="metric-label">總 NAV</div><div class="metric-val" id="b-etf-nav">—</div></div>
+                  <div class="metric"><div class="metric-label">累計報酬</div><div class="metric-val" id="b-etf-ret">—</div></div>
+                </div>
+                <button class="btn btn-success w-full" onclick="settleNAV('etf')">執行每日結算 NAV</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><span class="card-title" style="color:var(--amber)">個股組 NAV 計算</span></div>
+              <div class="card-body">
+                <div class="grid-2" style="gap:8px;margin-bottom:12px">
+                  <div class="metric"><div class="metric-label">現金部位</div><div class="metric-val neutral mono" id="b-stk-cash">—</div></div>
+                  <div class="metric"><div class="metric-label">股票市值</div><div class="metric-val neutral mono" id="b-stk-mktval">—</div></div>
+                  <div class="metric"><div class="metric-label">總 NAV</div><div class="metric-val" id="b-stk-nav">—</div></div>
+                  <div class="metric"><div class="metric-label">累計報酬</div><div class="metric-val" id="b-stk-ret">—</div></div>
+                </div>
+                <button class="btn btn-success w-full" onclick="settleNAV('stock')">執行每日結算 NAV</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">NAV 歷史走勢</span></div>
+            <div class="card-body">
+              <div class="chart-wrap tall"><canvas id="nav-chart" role="img" aria-label="NAV history chart for both groups">NAV history for ETF and stock groups</canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Log Tab -->
+        <div id="back-log" class="back-tab" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">系統營運日誌</span>
+              <button class="btn btn-sm" onclick="exportLog()">匯出 CSV</button>
+            </div>
+            <div class="card-body" style="max-height:500px;overflow-y:auto">
+              <div id="log-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report Tab -->
+        <div id="back-report" class="back-tab" style="display:none">
+          <div class="card mb-16">
+            <div class="card-header"><span class="card-title">標準化投資檢討報告</span><button class="btn btn-sm btn-primary" onclick="generateReport()">重新產出報告</button></div>
+            <div class="card-body">
+              <div id="report-content">
+                <div style="text-align:center;color:var(--text3);padding:40px">點擊「重新產出報告」以生成分析</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== ADMIN PANEL ===== -->
+      <div id="panel-admin" class="panel">
+        <div class="grid-2 mb-16">
+          <div class="card">
+            <div class="card-header"><span class="card-title" style="color:var(--red)">⚡ 無預警情境指令</span><span class="text-xs text-muted">總行經理模式</span></div>
+            <div class="card-body">
+              <div class="scenario-card">
+                <h4>即刻調整槓桿倍數</h4>
+                <p>無預警下令調整指定組別的允許槓桿上限，考驗前台即時應變能力</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr 80px;gap:8px;align-items:end">
+                  <div><label class="form-label">目標組別</label><select id="scn-group"><option value="etf">ETF 組</option><option value="stock">個股組</option><option value="both">兩組同時</option></select></div>
+                  <div><label class="form-label">新槓桿倍數</label><input type="number" id="scn-lev" value="0.5" min="0.1" max="3" step="0.1"></div>
+                  <button class="btn btn-danger" onclick="execLeverageChange()">執行</button>
+                </div>
+                <div class="meta" id="scn-lev-log">尚未執行</div>
+              </div>
+
+              <div class="scenario-card">
+                <h4>緊急停市凍結</h4>
+                <p>模擬突發事件，凍結指定組別所有前台操作權限（等同強制平倉預備）</p>
+                <div style="display:flex;gap:8px;align-items:flex-end">
+                  <div style="flex:1"><label class="form-label">目標組別</label><select id="scn-freeze-group"><option value="etf">ETF 組</option><option value="stock">個股組</option><option value="both">兩組同時</option></select></div>
+                  <button class="btn btn-danger" onclick="execEmergencyFreeze()">立即凍結</button>
+                  <button class="btn btn-success" onclick="execUnfreezeAll()">全數解除</button>
+                </div>
+              </div>
+
+              <div class="scenario-card">
+                <h4>注資 / 贖回資金</h4>
+                <p>模擬總行撥款或資金回收，調整指定組別的可用現金</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 80px;gap:8px;align-items:end">
+                  <div><label class="form-label">組別</label><select id="scn-fund-group"><option value="etf">ETF 組</option><option value="stock">個股組</option></select></div>
+                  <div><label class="form-label">操作</label><select id="scn-fund-op"><option value="add">注資</option><option value="sub">贖回</option></select></div>
+                  <div><label class="form-label">金額</label><input type="number" id="scn-fund-amt" value="100000" step="50000"></div>
+                  <button class="btn btn-warn" onclick="execFundChange()">執行</button>
+                </div>
+              </div>
+
+              <div class="scenario-card">
+                <h4>重置比賽</h4>
+                <p>將所有資料歸零，重新開始一場新的模擬交易賽</p>
+                <button class="btn btn-danger" onclick="resetAll()">⚠ 全部重置</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card mb-16">
+              <div class="card-header"><span class="card-title">雙組即時對比</span></div>
+              <div class="card-body" style="padding:0">
+                <table class="tbl comparison-table">
+                  <thead><tr><th>指標</th><th style="color:var(--teal)">ETF 組</th><th style="color:var(--amber)">個股組</th></tr></thead>
+                  <tbody id="comparison-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><span class="card-title">指令歷史</span></div>
+              <div class="card-body" style="max-height:280px;overflow-y:auto;padding:0">
+                <div id="scenario-log-list" style="padding:8px 12px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- SCORECARD MODAL -->
+<div class="modal-bg" id="scorecard-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">交易決策計分卡 — 下單必填</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--bg3);border-radius:6px;padding:10px 14px;margin-bottom:16px;display:flex;gap:20px">
+        <div><span class="text-xs text-muted">商品</span><div class="text-sm mono" id="sc-symbol-display">—</div></div>
+        <div><span class="text-xs text-muted">方向</span><div class="text-sm mono" id="sc-side-display">—</div></div>
+        <div><span class="text-xs text-muted">數量</span><div class="text-sm mono" id="sc-qty-display">—</div></div>
+        <div><span class="text-xs text-muted">預估金額</span><div class="text-sm mono" id="sc-amt-display">—</div></div>
+        <div><span class="text-xs text-muted">組別</span><div class="text-sm mono" id="sc-grp-display">—</div></div>
+      </div>
+
+      <div class="scorecard">
+        <div class="scorecard-header">A. 市場研究與進場依據 (1=極差 / 5=極佳)</div>
+        <div class="scorecard-row">
+          <div class="scorecard-num">1</div>
+          <div class="scorecard-content">
+            <div class="scorecard-q">技術面訊號：均線、量價、型態支持此方向嗎？</div>
+            <input type="text" id="sc1-reason" placeholder="簡述技術面觀察..." style="margin-top:4px">
+            <div class="scorecard-score">
+              <div class="score-dot" data-q="1" data-v="1" onclick="setScore(1,1)">1</div>
+              <div class="score-dot" data-q="1" data-v="2" onclick="setScore(1,2)">2</div>
+              <div class="score-dot" data-q="1" data-v="3" onclick="setScore(1,3)">3</div>
+              <div class="score-dot" data-q="1" data-v="4" onclick="setScore(1,4)">4</div>
+              <div class="score-dot" data-q="1" data-v="5" onclick="setScore(1,5)">5</div>
+              <span class="text-xs text-muted" style="margin-left:8px" id="score-1-label">尚未評分</span>
+            </div>
+          </div>
+        </div>
+        <div class="scorecard-row">
+          <div class="scorecard-num">2</div>
+          <div class="scorecard-content">
+            <div class="scorecard-q">基本面依據：財報、產業趨勢或總體經濟支持此操作嗎？</div>
+            <input type="text" id="sc2-reason" placeholder="簡述基本面觀察..." style="margin-top:4px">
+            <div class="scorecard-score">
+              <div class="score-dot" data-q="2" data-v="1" onclick="setScore(2,1)">1</div>
+              <div class="score-dot" data-q="2" data-v="2" onclick="setScore(2,2)">2</div>
+              <div class="score-dot" data-q="2" data-v="3" onclick="setScore(2,3)">3</div>
+              <div class="score-dot" data-q="2" data-v="4" onclick="setScore(2,4)">4</div>
+              <div class="score-dot" data-q="2" data-v="5" onclick="setScore(2,5)">5</div>
+              <span class="text-xs text-muted" style="margin-left:8px" id="score-2-label">尚未評分</span>
+            </div>
+          </div>
+        </div>
+        <div class="scorecard-header" style="margin-top:0">B. 風險管理規劃</div>
+        <div class="scorecard-row">
+          <div class="scorecard-num">3</div>
+          <div class="scorecard-content">
+            <div class="scorecard-q">停損點設定：預設何種條件觸發出場？</div>
+            <input type="text" id="sc3-reason" placeholder="例：跌破 -5% 或均線死叉時停損..." style="margin-top:4px">
+            <div class="scorecard-score">
+              <div class="score-dot" data-q="3" data-v="1" onclick="setScore(3,1)">1</div>
+              <div class="score-dot" data-q="3" data-v="2" onclick="setScore(3,2)">2</div>
+              <div class="score-dot" data-q="3" data-v="3" onclick="setScore(3,3)">3</div>
+              <div class="score-dot" data-q="3" data-v="4" onclick="setScore(3,4)">4</div>
+              <div class="score-dot" data-q="3" data-v="5" onclick="setScore(3,5)">5</div>
+              <span class="text-xs text-muted" style="margin-left:8px" id="score-3-label">尚未評分</span>
+            </div>
+          </div>
+        </div>
+        <div class="scorecard-row">
+          <div class="scorecard-num">4</div>
+          <div class="scorecard-content">
+            <div class="scorecard-q">倉位合理性：此筆佔組合比例是否符合集中度上限？</div>
+            <input type="text" id="sc4-reason" placeholder="例：佔總資產 15%，未超過 30% 上限..." style="margin-top:4px">
+            <div class="scorecard-score">
+              <div class="score-dot" data-q="4" data-v="1" onclick="setScore(4,1)">1</div>
+              <div class="score-dot" data-q="4" data-v="2" onclick="setScore(4,2)">2</div>
+              <div class="score-dot" data-q="4" data-v="3" onclick="setScore(4,3)">3</div>
+              <div class="score-dot" data-q="4" data-v="4" onclick="setScore(4,4)">4</div>
+              <div class="score-dot" data-q="4" data-v="5" onclick="setScore(4,5)">5</div>
+              <span class="text-xs text-muted" style="margin-left:8px" id="score-4-label">尚未評分</span>
+            </div>
+          </div>
+        </div>
+        <div class="scorecard-header" style="margin-top:0">C. 目標與預期</div>
+        <div class="scorecard-row">
+          <div class="scorecard-num">5</div>
+          <div class="scorecard-content">
+            <div class="scorecard-q">目標報酬：預期持倉多久？目標獲利幅度？</div>
+            <input type="text" id="sc5-reason" placeholder="例：持倉 2 週，目標獲利 +8%..." style="margin-top:4px">
+            <div class="scorecard-score">
+              <div class="score-dot" data-q="5" data-v="1" onclick="setScore(5,1)">1</div>
+              <div class="score-dot" data-q="5" data-v="2" onclick="setScore(5,2)">2</div>
+              <div class="score-dot" data-q="5" data-v="3" onclick="setScore(5,3)">3</div>
+              <div class="score-dot" data-q="5" data-v="4" onclick="setScore(5,4)">4</div>
+              <div class="score-dot" data-q="5" data-v="5" onclick="setScore(5,5)">5</div>
+              <span class="text-xs text-muted" style="margin-left:8px" id="score-5-label">尚未評分</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;background:var(--bg3);border-radius:6px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span class="text-xs text-muted">計分卡總分：</span>
+          <span class="mono" id="scorecard-total" style="font-size:18px;font-weight:500;color:var(--blue)">0</span>
+          <span class="text-xs text-muted"> / 25</span>
+        </div>
+        <div id="scorecard-level" class="badge badge-pending">尚未評分</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="submitOrder()">提交訂單至中台審核 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Review Scorecard Modal -->
+<div class="modal-bg" id="review-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">審核訂單 — 中台覆核</span>
+      <button class="modal-close" onclick="closeReviewModal()">✕</button>
+    </div>
+    <div class="modal-body" id="review-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeReviewModal()">取消</button>
+      <input type="text" id="review-comment" placeholder="中台意見（可選填）" style="flex:1;max-width:240px">
+      <button class="btn btn-danger" onclick="rejectOrder()">駁回</button>
+      <button class="btn btn-success" onclick="approveOrder()">核准並執行</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-area" id="toast-area"></div>
+
+<script>
+// --- 填入你的 Supabase 金鑰 ---
+const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co/rest/v1/';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmcmVsanhsZ2ZycXNsdHN3cGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5OTcwMjgsImV4cCI6MjA5NDU3MzAyOH0.IHSE6EuyNNeKVtbCTnB4Dtow_7eLS21elUVH4V0eug0';
+const supabase = supabaseClient.createClient(supabaseUrl, supabaseAnonKey);
+
+// (這裡保留你原本設定好的 state 常數，以及 fmt, calcNAV 等工具函數)
+// ... 請確保 state.securities = {} 是空的，因為我們要從雲端抓 ...
+
+// 1. 抓取雲端報價
+async function fetchRealtimePrices() {
+  try {
+    const { data, error } = await supabase.from('securities').select('*');
+    if (error) throw error;
+    
+    data.forEach(item => {
+      if (!state.securities[item.symbol]) {
+         state.securities[item.symbol] = {
+           name: item.name, price: parseFloat(item.price), base: parseFloat(item.base),
+           vol: parseFloat(item.vol), type: item.type, groups: [item.grp]
+         };
+      } else {
+         const s = state.securities[item.symbol];
+         s.price = parseFloat(item.price);
+         s.change = s.price - s.base;
+         s.changeRate = (s.change / s.base) * 100;
+      }
+    });
+    renderTickers(); updateOrderPriceDisplay(); updateAllMetrics();
+  } catch (err) { console.error(err); }
+}
+
+// 2. 啟動即時監聽 (這就是多人連線的魔法！有人下單，中台秒收到)
+function setupRealtimeSubscriptions() {
+  supabase.channel('public:orders')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+      const newOrder = payload.new;
+      if (payload.eventType === 'INSERT') {
+        const orderData = { ...newOrder, qty: parseInt(newOrder.qty), price: parseFloat(newOrder.price), amount: parseFloat(newOrder.amount), group: newOrder.grp };
+        state.orders.push(orderData);
+        if (orderData.status === 'pending') {
+           state.pendingApproval.push(orderData);
+           showToast(`新訂單進件：${orderData.symbol}`, 'info');
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const localOrder = state.orders.find(o => o.id === newOrder.id);
+        if (localOrder && localOrder.status === 'pending') {
+           localOrder.status = newOrder.status;
+           localOrder.comment = newOrder.comment;
+           state.pendingApproval = state.pendingApproval.filter(x => x.id !== newOrder.id);
+           if (newOrder.status === 'executed') executeOrder(localOrder);
+           else if (newOrder.status === 'rejected') showToast(`訂單遭駁回：${localOrder.symbol}`, 'warn');
+        }
+      }
+      updateAllMetrics();
+    }).subscribe();
+}
+
+// 3. 雲端送單
+async function submitOrder() {
+  const sym = document.getElementById('order-symbol').value;
+  const qty = parseInt(document.getElementById('order-qty').value);
+  const side = document.getElementById('order-side').value;
+  const grp = state.currentOrderGroup;
+  
+  if(state.groups[grp].frozen){ showToast('已被凍結，無法下單','danger'); closeModal(); return; }
+  
+  const total = Object.values(state.scorecardScores).reduce((a,b)=>a+b,0);
+  const orderData = {
+    id: uid(), time: now(), symbol: sym, name: state.securities[sym].name,
+    qty: qty, side: side, price: state.securities[sym].price, amount: state.securities[sym].price * qty,
+    grp: grp, status: 'pending', comment: '', scorecard: { scores: state.scorecardScores, total: total }
+  };
+
+  closeModal();
+  const { error } = await supabase.from('orders').insert([orderData]);
+  if (!error) addLog(`前台提交訂單：${sym} × ${qty}，送交中台審核`,'info');
+}
+
+// 4. 中台核准與駁回
+async function approveOrder() {
+  const id = state.currentReviewOrderId;
+  const comment = document.getElementById('review-comment').value || '中台核准';
+  const { error } = await supabase.from('orders').update({ status: 'executed', comment: comment }).eq('id', id);
+  if (!error) closeReviewModal();
+}
+
+async function rejectOrder() {
+  const id = state.currentReviewOrderId;
+  const comment = document.getElementById('review-comment').value || '中台駁回';
+  const { error } = await supabase.from('orders').update({ status: 'rejected', comment: comment }).eq('id', id);
+  if (!error) closeReviewModal();
+}
+
+// 5. 初始化
+function init(){
+  setupRealtimeSubscriptions();
+  fetchRealtimePrices().then(() => {
+    setOrderGroup('etf'); updateSymbolOptions(); renderTickers(); updateAllMetrics(); renderLog();
+  });
+}
+init();
+</script>
+</body>
+</html>
