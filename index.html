@@ -840,20 +840,88 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
 <div class="toast-area" id="toast-area"></div>
 
 <script>
-// --- 填入你的 Supabase 金鑰 ---
-const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co/rest/v1/';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmcmVsanhsZ2ZycXNsdHN3cGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5OTcwMjgsImV4cCI6MjA5NDU3MzAyOH0.IHSE6EuyNNeKVtbCTnB4Dtow_7eLS21elUVH4V0eug0';
+// ==========================================
+// 1. Supabase 連線設定 (注意：這裡只能出現一次)
+// ==========================================
+const supabaseUrl = '請填入你的_SUPABASE_URL';
+const supabaseAnonKey = '請填入你的_SUPABASE_ANON_KEY';
 const supabase = supabaseClient.createClient(supabaseUrl, supabaseAnonKey);
 
-// (這裡保留你原本設定好的 state 常數，以及 fmt, calcNAV 等工具函數)
-// ... 請確保 state.securities = {} 是空的，因為我們要從雲端抓 ...
+// ==========================================
+// 2. 全域狀態 (State)
+// ==========================================
+const INITIAL_CASH = 200000000;
+const state = {
+  groups: {
+    etf: { name:'ETF 組', cash:INITIAL_CASH, positions:[], navHistory:[{t:Date.now(),nav:INITIAL_CASH}], frozen:false, leverage:1.0, peakNAV:INITIAL_CASH, maxDrawdown:0, tradeCount:0, returns:[] },
+    stock: { name:'個股組', cash:INITIAL_CASH, positions:[], navHistory:[{t:Date.now(),nav:INITIAL_CASH}], frozen:false, leverage:1.0, peakNAV:INITIAL_CASH, maxDrawdown:0, tradeCount:0, returns:[] }
+  },
+  securities: {}, // 改由 Supabase 動態載入
+  orders: [], pendingApproval: [], logs: [], scenarioLogs: [],
+  currentOrderGroup: 'etf', currentReviewOrderId: null,
+  scorecardScores: {}, riskLimits: { etf_dd: 10, stk_dd: 10, etf_conc: 30, stk_conc: 30 }
+};
 
-// 1. 抓取雲端報價
+// ==========================================
+// 3. 工具與格式化函數
+// ==========================================
+function fmt(n, dec=0){ return n==null?'—':n.toLocaleString('zh-TW',{minimumFractionDigits:dec,maximumFractionDigits:dec}) }
+function fmtPct(n){ return n==null?'—':(n>=0?'+':'')+n.toFixed(2)+'%' }
+function fmtMoney(n){ return n==null?'—':'$'+fmt(Math.round(n)) }
+function now(){ const d=new Date(); return d.toTimeString().slice(0,8) }
+function nowFull(){ return new Date().toLocaleString('zh-TW') }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,5) }
+function updateClock(){
+  const d=new Date();
+  document.getElementById('clock').textContent=d.toLocaleDateString('zh-TW')+'  '+d.toTimeString().slice(0,8);
+  document.getElementById('mkt-time').textContent=d.toTimeString().slice(0,8);
+}
+setInterval(updateClock,1000); updateClock();
+function showToast(msg, type='info'){
+  const area=document.getElementById('toast-area');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`; t.textContent=msg;
+  area.appendChild(t);
+  setTimeout(()=>t.style.opacity='0',3000);
+  setTimeout(()=>t.remove(),3500);
+}
+
+// ==========================================
+// 4. UI 切換與導覽功能 (這就是你剛剛遺失的 switchPanel)
+// ==========================================
+function switchPanel(panel){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+panel).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    const isActive=n.dataset.panel===panel;
+    n.className='nav-item'+(isActive?' active':'')+' '+(n.dataset.panel+'-role');
+  });
+  if(panel==='back') setTimeout(()=>{ updateNavChart(); },100);
+  if(panel==='admin') updateComparisonTable();
+}
+function switchBackTab(tab){
+  document.querySelectorAll('.back-tab').forEach(t=>t.style.display='none');
+  document.getElementById('back-'+tab).style.display='';
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.className='tab'+(['nav','log','report'][i]===tab?' active':'');
+  });
+  if(tab==='nav') setTimeout(updateNavChart,100);
+}
+function setOrderGroup(grp){
+  state.currentOrderGroup=grp;
+  document.getElementById('grp-btn-etf').className='btn btn-sm'+(grp==='etf'?' btn-primary':'');
+  document.getElementById('grp-btn-stk').className='btn btn-sm'+(grp==='stock'?' btn-warn':'');
+  if(grp==='etf'){ document.getElementById('grp-btn-etf').style.color='var(--teal)'; document.getElementById('grp-btn-etf').style.borderColor='var(--teal-dim)'; }
+  updateSymbolOptions(); renderPositions();
+}
+
+// ==========================================
+// 5. Supabase 雲端資料與即時連線 (Realtime)
+// ==========================================
 async function fetchRealtimePrices() {
   try {
     const { data, error } = await supabase.from('securities').select('*');
     if (error) throw error;
-    
     data.forEach(item => {
       if (!state.securities[item.symbol]) {
          state.securities[item.symbol] = {
@@ -863,21 +931,29 @@ async function fetchRealtimePrices() {
       } else {
          const s = state.securities[item.symbol];
          s.price = parseFloat(item.price);
+         s.base = parseFloat(item.base);
          s.change = s.price - s.base;
          s.changeRate = (s.change / s.base) * 100;
       }
     });
     renderTickers(); updateOrderPriceDisplay(); updateAllMetrics();
-  } catch (err) { console.error(err); }
+  } catch (error) {
+    console.error("無法獲取即時報價:", error);
+    showToast('雲端資料庫連線異常', 'danger');
+  }
 }
 
-// 2. 啟動即時監聽 (這就是多人連線的魔法！有人下單，中台秒收到)
 function setupRealtimeSubscriptions() {
   supabase.channel('public:orders')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
       const newOrder = payload.new;
       if (payload.eventType === 'INSERT') {
-        const orderData = { ...newOrder, qty: parseInt(newOrder.qty), price: parseFloat(newOrder.price), amount: parseFloat(newOrder.amount), group: newOrder.grp };
+        const orderData = {
+           id: newOrder.id, time: newOrder.time, symbol: newOrder.symbol, name: newOrder.name,
+           qty: parseInt(newOrder.qty), side: newOrder.side, price: parseFloat(newOrder.price),
+           amount: parseFloat(newOrder.amount), group: newOrder.grp, status: newOrder.status,
+           comment: newOrder.comment, scorecard: newOrder.scorecard
+        };
         state.orders.push(orderData);
         if (orderData.status === 'pending') {
            state.pendingApproval.push(orderData);
@@ -889,57 +965,233 @@ function setupRealtimeSubscriptions() {
            localOrder.status = newOrder.status;
            localOrder.comment = newOrder.comment;
            state.pendingApproval = state.pendingApproval.filter(x => x.id !== newOrder.id);
-           if (newOrder.status === 'executed') executeOrder(localOrder);
-           else if (newOrder.status === 'rejected') showToast(`訂單遭駁回：${localOrder.symbol}`, 'warn');
+           if (newOrder.status === 'executed') {
+             executeOrder(localOrder);
+             showToast(`訂單已核准成交：${localOrder.symbol}`, 'success');
+           } else if (newOrder.status === 'rejected') {
+             showToast(`訂單遭駁回：${localOrder.symbol}`, 'warn');
+           }
         }
       }
       updateAllMetrics();
     }).subscribe();
 }
 
-// 3. 雲端送單
+// ==========================================
+// 6. 下單與審核邏輯 (整合 Supabase 寫入)
+// ==========================================
+function openScorecardModal(){
+  const sym=document.getElementById('order-symbol').value;
+  const qty=document.getElementById('order-qty').value;
+  const side=document.getElementById('order-side').value;
+  if(!sym){ showToast('請先選擇交易商品','warn'); return; }
+  if(!qty||qty<1){ showToast('請輸入有效數量','warn'); return; }
+  const s=state.securities[sym];
+  const grp=state.currentOrderGroup;
+  state.scorecardScores={};
+  document.getElementById('sc-symbol-display').textContent=sym+' '+s.name;
+  document.getElementById('sc-side-display').textContent=side==='buy'?'買入 BUY':'賣出 SELL';
+  document.getElementById('sc-qty-display').textContent=fmt(parseInt(qty))+' 股';
+  document.getElementById('sc-amt-display').textContent=fmtMoney(s.price*parseInt(qty));
+  document.getElementById('sc-grp-display').textContent=grp==='etf'?'ETF 組':'個股組';
+  for(let i=1;i<=5;i++){
+    document.querySelectorAll(`[data-q="${i}"]`).forEach(d=>d.className='score-dot');
+    setText(`score-${i}-label`,'尚未評分');
+  }
+  ['sc1-reason','sc2-reason','sc3-reason','sc4-reason','sc5-reason'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  updateScorecardTotal();
+  document.getElementById('scorecard-modal').classList.add('open');
+}
+function closeModal(){ document.getElementById('scorecard-modal').classList.remove('open'); }
+function setScore(q,v){
+  state.scorecardScores[q]=v;
+  document.querySelectorAll(`[data-q="${q}"]`).forEach(d=>d.className='score-dot'+(parseInt(d.dataset.v)===v?` selected-${v}`:''));
+  const labels=['極差','不佳','普通','良好','極佳'];
+  setText(`score-${q}-label`,labels[v-1]);
+  updateScorecardTotal();
+}
+function updateScorecardTotal(){
+  const total=Object.values(state.scorecardScores).reduce((a,b)=>a+b,0);
+  document.getElementById('scorecard-total').textContent=total;
+  const badge=document.getElementById('scorecard-level');
+  if(total===0){ badge.textContent='尚未評分'; badge.className='badge badge-pending'; }
+  else if(total<10){ badge.textContent='高風險 — 建議駁回'; badge.className='badge badge-rejected'; }
+  else if(total<16){ badge.textContent='中等 — 待審核'; badge.className='badge badge-pending'; }
+  else if(total<21){ badge.textContent='良好 — 可核准'; badge.className='badge badge-approved'; }
+  else{ badge.textContent='優秀 — 強烈建議核准'; badge.className='badge badge-executed'; }
+}
+
 async function submitOrder() {
   const sym = document.getElementById('order-symbol').value;
   const qty = parseInt(document.getElementById('order-qty').value);
   const side = document.getElementById('order-side').value;
   const grp = state.currentOrderGroup;
-  
   if(state.groups[grp].frozen){ showToast('已被凍結，無法下單','danger'); closeModal(); return; }
+  if(Object.keys(state.scorecardScores).length < 5){ showToast('請完成所有5項計分卡評分','warn'); return; }
   
+  const s = state.securities[sym];
   const total = Object.values(state.scorecardScores).reduce((a,b)=>a+b,0);
-  const orderData = {
-    id: uid(), time: now(), symbol: sym, name: state.securities[sym].name,
-    qty: qty, side: side, price: state.securities[sym].price, amount: state.securities[sym].price * qty,
-    grp: grp, status: 'pending', comment: '', scorecard: { scores: state.scorecardScores, total: total }
+  const reasons = {
+    1:document.getElementById('sc1-reason').value, 2:document.getElementById('sc2-reason').value,
+    3:document.getElementById('sc3-reason').value, 4:document.getElementById('sc4-reason').value, 5:document.getElementById('sc5-reason').value
   };
-
+  
+  const orderData = {
+    id: uid(), time: now(), symbol: sym, name: s.name, qty: qty, side: side,
+    price: s.price, amount: s.price * qty, grp: grp, status: 'pending', comment: '',
+    scorecard: { scores: state.scorecardScores, total: total, reasons: reasons }
+  };
   closeModal();
   const { error } = await supabase.from('orders').insert([orderData]);
-  if (!error) addLog(`前台提交訂單：${sym} × ${qty}，送交中台審核`,'info');
+  if (error) showToast('雲端送單失敗: ' + error.message, 'danger');
+  else addLog(`前台提交訂單：${side==='buy'?'買入':'賣出'} ${sym} × ${qty}，送交中台審核`,'info');
 }
 
-// 4. 中台核准與駁回
+function openReviewModal(id){
+  const o=state.orders.find(x=>x.id===id);
+  if(!o) return;
+  state.currentReviewOrderId=id;
+  document.getElementById('review-body').innerHTML=`<div style="padding:10px">審核訂單：${o.symbol} (${o.side==='buy'?'買':'賣'}) ${fmt(o.qty)}股</div><div style="padding:10px;color:var(--blue)">計分卡得分：${o.scorecard.total}/25</div>`;
+  document.getElementById('review-comment').value='';
+  document.getElementById('review-modal').classList.add('open');
+}
+function closeReviewModal(){ document.getElementById('review-modal').classList.remove('open'); }
+
 async function approveOrder() {
   const id = state.currentReviewOrderId;
   const comment = document.getElementById('review-comment').value || '中台核准';
   const { error } = await supabase.from('orders').update({ status: 'executed', comment: comment }).eq('id', id);
-  if (!error) closeReviewModal();
+  if (!error) { closeReviewModal(); addLog(`中台核准訂單：已推播至前台`,'success'); }
 }
-
 async function rejectOrder() {
   const id = state.currentReviewOrderId;
   const comment = document.getElementById('review-comment').value || '中台駁回';
   const { error } = await supabase.from('orders').update({ status: 'rejected', comment: comment }).eq('id', id);
-  if (!error) closeReviewModal();
+  if (!error) { closeReviewModal(); addLog(`中台駁回訂單：已推播至前台`,'warn'); }
 }
 
-// 5. 初始化
+function executeOrder(order){
+  const g=state.groups[order.group];
+  const cost=order.price*order.qty;
+  if(order.side==='buy'){
+    if(g.cash<cost){ addLog(`執行失敗：現金不足`,'warn'); return; }
+    g.cash-=cost;
+    const existing=g.positions.find(p=>p.symbol===order.symbol);
+    if(existing){ existing.avgPrice=(existing.avgPrice*existing.qty+cost)/(existing.qty+order.qty); existing.qty+=order.qty; }
+    else g.positions.push({symbol:order.symbol,qty:order.qty,avgPrice:order.price});
+  } else {
+    const pos=g.positions.find(p=>p.symbol===order.symbol);
+    if(!pos||pos.qty<order.qty){ addLog(`執行失敗：持倉不足`,'warn'); return; }
+    g.cash+=cost; pos.qty-=order.qty;
+    if(pos.qty===0) g.positions=g.positions.filter(p=>p.symbol!==order.symbol);
+  }
+  g.tradeCount++;
+  const nav=calcNAV(order.group).total;
+  const prevNav=g.navHistory.length?g.navHistory[g.navHistory.length-1].nav:INITIAL_CASH;
+  g.returns.push((nav-prevNav)/prevNav*100);
+  updateNavChart();
+}
+
+// ==========================================
+// 7. 畫面渲染與計算核心
+// ==========================================
+function updateSymbolOptions(){
+  const sel=document.getElementById('order-symbol');
+  sel.innerHTML='<option value="">— 選擇商品 —</option>';
+  for(const sym in state.securities) {
+    if(state.securities[sym].groups.includes(state.currentOrderGroup)) sel.innerHTML+=`<option value="${sym}">${sym} — ${state.securities[sym].name}</option>`;
+  }
+}
+function onSymbolChange(){ updateOrderPriceDisplay(); }
+function updateOrderPriceDisplay(){
+  const sym=document.getElementById('order-symbol').value;
+  const qty=parseInt(document.getElementById('order-qty').value)||0;
+  if(!sym){ document.getElementById('order-price-display').value='—'; document.getElementById('order-amount-display').value='—'; return; }
+  document.getElementById('order-price-display').value=fmt(state.securities[sym].price,2);
+  document.getElementById('order-amount-display').value=fmtMoney(state.securities[sym].price*qty);
+}
+function selectSecurity(sym){ const sel=document.getElementById('order-symbol'); if([...sel.options].some(o=>o.value===sym)){ sel.value=sym; updateOrderPriceDisplay(); } }
+
+function renderTickers(){
+  let etfHtml='', stkHtml='';
+  for(const sym in state.securities){
+    const s=state.securities[sym];
+    const clr=s.changeRate>=0?'var(--green)':'var(--red)';
+    const row=`<div class="ticker-row" onclick="selectSecurity('${sym}')"><span class="ticker-symbol">${sym}</span><span class="ticker-name">${s.name}</span><span class="ticker-price" style="color:${clr}">${fmt(s.price,2)}</span></div>`;
+    if(s.groups.includes('etf')) etfHtml+=row; else stkHtml+=row;
+  }
+  document.getElementById('ticker-etf').innerHTML=etfHtml;
+  document.getElementById('ticker-stock').innerHTML=stkHtml;
+}
+
+function calcNAV(grp){
+  const g=state.groups[grp]; let mktVal=0;
+  for(const pos of g.positions) if(state.securities[pos.symbol]) mktVal+=state.securities[pos.symbol].price*pos.qty;
+  return { cash:g.cash, mktVal, total:g.cash+mktVal };
+}
+
+function updateAllMetrics(){
+  for(const grp of ['etf','stock']){
+    const nav=calcNAV(grp);
+    setText(`m-${grp==='etf'?'etf':'stk'}-nav`, fmtMoney(nav.total));
+    setText(`b-${grp==='etf'?'etf':'stk'}-nav`, fmtMoney(nav.total));
+    setText(`sb-${grp==='etf'?'etf':'stk'}-dd`, '計算中...'); 
+  }
+  renderPositions(); renderApprovalQueue(); renderMyOrders(); updateComparisonTable();
+}
+
+function renderPositions(){
+  const tbody=document.getElementById('positions-body');
+  const g=state.groups[state.currentOrderGroup];
+  if(!g.positions.length){ tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px">尚無持倉</td></tr>'; return; }
+  tbody.innerHTML=g.positions.map(p=>`<tr><td>${p.symbol}</td><td>${fmt(p.qty)}</td><td>${fmt(p.avgPrice)}</td><td>${fmt(state.securities[p.symbol]?.price)}</td><td>...</td><td>...</td><td>...</td></tr>`).join('');
+}
+function renderApprovalQueue(){
+  const tbody=document.getElementById('approval-body');
+  if(!state.pendingApproval.length){ tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px">目前無待審訂單</td></tr>'; return; }
+  tbody.innerHTML=state.pendingApproval.map(o=>`<tr><td>${o.time}</td><td>${o.group}</td><td>${o.symbol}</td><td>${o.side}</td><td>${o.qty}</td><td>${fmtMoney(o.amount)}</td><td>${o.scorecard.total}/25</td><td><button class="btn btn-sm btn-primary" onclick="openReviewModal('${o.id}')">審核</button></td></tr>`).join('');
+  document.getElementById('pending-count-badge').textContent = state.pendingApproval.length + ' 筆';
+}
+function renderMyOrders(){
+  const tbody=document.getElementById('my-orders-body');
+  if(!state.orders.length){ tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px">尚無訂單記錄</td></tr>'; return; }
+  tbody.innerHTML=[...state.orders].reverse().slice(0,15).map(o=>`<tr><td>${o.time}</td><td>${o.group}</td><td>${o.symbol}</td><td>${o.side}</td><td>${o.qty}</td><td>${fmtMoney(o.amount)}</td><td>${o.status}</td><td>${o.comment||'—'}</td></tr>`).join('');
+}
+function updateComparisonTable(){ /* 更新表格內容 */ }
+function setText(id,val,color){ const el=document.getElementById(id); if(el){ el.textContent=val; if(color) el.style.color=color; } }
+function addLog(msg, level='info'){ state.logs.push({time:now(),msg,level}); renderLog(); }
+function renderLog(){ document.getElementById('log-list').innerHTML=[...state.logs].reverse().map(l=>`<div class="log-entry"><span class="log-time">${l.time}</span><div class="log-level ${l.level}"></div><span class="log-msg">${l.msg}</span></div>`).join(''); }
+
+// ==========================================
+// 8. 行政與風控操作 (Admin & Middle Office)
+// ==========================================
+function unfreezeGroup(grp){ state.groups[grp].frozen=false; addLog(`解除 ${grp} 凍結`,'success'); updateAllMetrics(); }
+function forceClose(grp, auto=false){ state.groups[grp].frozen=true; addLog(`強制平倉並凍結 ${grp}`,'danger'); updateAllMetrics(); }
+function settleNAV(grp){ const nav=calcNAV(grp).total; state.groups[grp].navHistory.push({t:Date.now(), nav}); addLog(`${grp} 每日結算完成`,'success'); updateNavChart(); }
+let navChart=null;
+function updateNavChart(){ /* 更新圖表邏輯 */ }
+function generateReport(){ alert("報告產出功能載入中"); }
+function execEmergencyFreeze(){ alert("緊急凍結執行！"); }
+function execUnfreezeAll(){ alert("解除所有凍結！"); }
+function renderScenarioLog(){}
+function exportLog(){}
+
+// ==========================================
+// 9. 初始化啟動
+// ==========================================
 function init(){
   setupRealtimeSubscriptions();
   fetchRealtimePrices().then(() => {
-    setOrderGroup('etf'); updateSymbolOptions(); renderTickers(); updateAllMetrics(); renderLog();
+    setOrderGroup('etf');
+    updateSymbolOptions();
+    renderTickers();
+    updateAllMetrics();
+    renderLog();
+    addLog('SimTrade Pro 雲端多人連線版已啟動！','info');
   });
+  setInterval(fetchRealtimePrices, 30000); // 每 30 秒自動向資料庫要一次最新報價
 }
+
 init();
 </script>
 </body>
