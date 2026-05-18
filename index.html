@@ -919,18 +919,44 @@ function setOrderGroup(grp){
 // 5. ★ 即時報價核心：Edge Function 觸發 + Realtime 訂閱
 // ==========================================
 
+// ==========================================
+// 5. ★ 修正版：前端呼叫 Edge Function，讓它去抓價格並寫入 Supabase
+//    Realtime 訂閱會自動收到推播，不需要前端自己 render
+// ==========================================
 async function triggerPriceUpdate() {
   const dot = document.getElementById('price-dot');
   const statusText = document.getElementById('price-status-text');
-  if(dot) dot.className = 'updating';
-  if(statusText) statusText.textContent = '更新中...';
 
-  const symbols = Object.keys(state.securities);
-  if(!symbols.length){
-    if(dot) dot.className = 'error';
-    state.priceUpdateCountdown = 10;
-    return;
+  if (dot) dot.className = 'updating';
+  if (statusText) statusText.textContent = '更新中...';
+
+  try {
+    // ★ 呼叫你部署的 Edge Function，讓伺服器去抓 Yahoo Finance
+    const { data, error } = await supabaseDb.functions.invoke('update-prices');
+
+    if (error) throw error;
+
+    const updated = data?.updated ?? 0;
+
+    if (updated > 0) {
+      state.lastPriceUpdate = new Date();
+      state.priceUpdateSuccess = true;
+      if (dot) dot.className = 'live';
+      if (statusText) statusText.textContent = `即時 · ${updated} 檔 · ${now()}`;
+      // 注意：不需要手動 renderTickers()，Realtime 訂閱會自動收到並更新
+    } else {
+      throw new Error('Edge Function 回傳 0 筆更新');
+    }
+  } catch (e) {
+    console.warn('報價更新失敗:', e);
+    state.priceUpdateSuccess = false;
+    if (dot) dot.className = 'error';
+    if (statusText) statusText.textContent = '報價連線異常';
+    addLog(`⚠️ 報價更新失敗：${e.message}`, 'warn');
   }
+
+  state.priceUpdateCountdown = 10;
+}
 
   let updated = 0;
 
