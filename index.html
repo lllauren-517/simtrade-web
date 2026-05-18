@@ -69,6 +69,12 @@ button{cursor:pointer;border:none;border-radius:4px;font-family:var(--sans);font
 .group-badge.frozen .dot{background:var(--red);animation:pulse 1s infinite}
 .group-badge.frozen{color:var(--red);border-color:var(--red-dim)}
 #clock{font-family:var(--mono);font-size:12px;color:var(--text2);white-space:nowrap}
+/* 即時報價指示燈 */
+#price-status{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--text3)}
+#price-dot{width:7px;height:7px;border-radius:50%;background:var(--text3);transition:background .3s}
+#price-dot.live{background:var(--green);animation:pulse 2s infinite}
+#price-dot.updating{background:var(--amber)}
+#price-dot.error{background:var(--red)}
 
 #main{display:flex;flex:1;overflow:hidden}
 #sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
@@ -167,9 +173,14 @@ button{cursor:pointer;border:none;border-radius:4px;font-family:var(--sans);font
 .ticker-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
 .ticker-row:hover{background:rgba(255,255,255,.02)}
 .ticker-row:last-child{border-bottom:none}
-.ticker-symbol{font-family:var(--mono);font-size:13px;font-weight:500;width:60px}
+.ticker-symbol{font-family:var(--mono);font-size:13px;font-weight:500;width:80px}
 .ticker-name{color:var(--text2);flex:1;font-size:12px}
 .ticker-price{font-family:var(--mono);font-size:14px;font-weight:500;text-align:right;min-width:70px}
+/* 價格閃爍動畫 */
+@keyframes priceUp{0%{background:rgba(52,208,138,.3)}100%{background:transparent}}
+@keyframes priceDown{0%{background:rgba(255,76,82,.3)}100%{background:transparent}}
+.price-flash-up{animation:priceUp .6s ease}
+.price-flash-down{animation:priceDown .6s ease}
 
 /* Log entries */
 .log-entry{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -260,9 +271,15 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
   <header id="header">
     <div style="display:flex;align-items:center;gap:12px">
       <h1><span>Sim</span>Trade Pro</h1>
-      <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">v1.0 | SANDBOX</span>
+      <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">v1.1 | LIVE</span>
     </div>
     <div class="header-group">
+      <!-- ★ 新增：即時報價指示燈 -->
+      <div id="price-status">
+        <div id="price-dot"></div>
+        <span id="price-status-text">等待報價...</span>
+      </div>
+      <div style="width:1px;height:20px;background:var(--border2);margin:0 4px"></div>
       <div id="etf-status" class="group-badge etf"><div class="dot"></div>ETF 組 <span id="etf-nav-hdr" style="font-size:11px">—</span></div>
       <div id="stock-status" class="group-badge stock"><div class="dot"></div>個股 組 <span id="stock-nav-hdr" style="font-size:11px">—</span></div>
       <div style="width:1px;height:20px;background:var(--border2);margin:0 4px"></div>
@@ -295,6 +312,8 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
         <div class="mini-stat"><span class="mini-stat-label">ETF 回撤</span><span class="mini-stat-val" id="sb-etf-dd" style="color:var(--green)">0.00%</span></div>
         <div class="mini-stat"><span class="mini-stat-label">個股 回撤</span><span class="mini-stat-val" id="sb-stk-dd" style="color:var(--green)">0.00%</span></div>
         <div class="mini-stat"><span class="mini-stat-label">交易筆數</span><span class="mini-stat-val" id="sb-trades">0</span></div>
+        <!-- ★ 新增：報價更新倒數 -->
+        <div class="mini-stat"><span class="mini-stat-label">下次報價</span><span class="mini-stat-val" id="sb-countdown" style="color:var(--text3);font-family:var(--mono)">—</span></div>
       </div>
     </nav>
 
@@ -322,7 +341,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
           <!-- Market Watch -->
           <div class="card" style="grid-row:span 2">
             <div class="card-header">
-              <span class="card-title">行行情報價</span>
+              <span class="card-title">行情報價</span>
               <span style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="mkt-time">--:--:--</span>
             </div>
             <div style="padding:4px 0">
@@ -363,11 +382,11 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
                 </div>
                 <div>
                   <label class="form-label">數量（股/單位）</label>
-                  <input type="number" id="order-qty" min="1" value="100" placeholder="100">
+                  <input type="number" id="order-qty" min="1" value="100" placeholder="100" oninput="updateOrderPriceDisplay()">
                 </div>
               </div>
               <div class="form-row">
-                <label class="form-label">參考價格</label>
+                <label class="form-label">即時報價</label>
                 <input type="text" id="order-price-display" readonly style="background:var(--bg4);color:var(--text2);cursor:default">
               </div>
               <div class="form-row">
@@ -576,7 +595,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
           <div class="card">
             <div class="card-header"><span class="card-title">NAV 歷史走勢</span></div>
             <div class="card-body">
-              <div class="chart-wrap tall"><canvas id="nav-chart" role="img" aria-label="NAV history chart for both groups">NAV history for ETF and stock groups</canvas></div>
+              <div class="chart-wrap tall"><canvas id="nav-chart"></canvas></div>
             </div>
           </div>
         </div>
@@ -812,7 +831,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
 
 <script>
 // ==========================================
-// 1. Supabase 連線設定 (重新命名為 supabaseDb 完美避開全域宣告衝突)
+// 1. Supabase 連線設定
 // ==========================================
 const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmcmVsanhsZ2ZycXNsdHN3cGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5OTcwMjgsImV4cCI6MjA5NDU3MzAyOH0.IHSE6EuyNNeKVtbCTnB4Dtow_7eLS21elUVH4V0eug0';
@@ -824,13 +843,18 @@ const supabaseDb = supabase.createClient(supabaseUrl, supabaseAnonKey);
 const INITIAL_CASH = 200000000;
 const state = {
   groups: {
-    etf: { name:'ETF 組', cash:INITIAL_CASH, positions:[], navHistory:[{t:Date.now(),nav:INITIAL_CASH}], frozen:false, leverage:1.0, peakNAV:INITIAL_CASH, maxDrawdown:0, tradeCount:0, returns:[] },
+    etf:   { name:'ETF 組',  cash:INITIAL_CASH, positions:[], navHistory:[{t:Date.now(),nav:INITIAL_CASH}], frozen:false, leverage:1.0, peakNAV:INITIAL_CASH, maxDrawdown:0, tradeCount:0, returns:[] },
     stock: { name:'個股組', cash:INITIAL_CASH, positions:[], navHistory:[{t:Date.now(),nav:INITIAL_CASH}], frozen:false, leverage:1.0, peakNAV:INITIAL_CASH, maxDrawdown:0, tradeCount:0, returns:[] }
   },
-  securities: {}, 
+  securities: {},
   orders: [], pendingApproval: [], logs: [], scenarioLogs: [],
   currentOrderGroup: 'etf', currentReviewOrderId: null,
-  scorecardScores: {}, riskLimits: { etf_dd: 10, stk_dd: 10, etf_conc: 30, stk_conc: 30 }
+  scorecardScores: {},
+  riskLimits: { etf_dd:10, stk_dd:10, etf_conc:30, stk_conc:30 },
+  // ★ 新增：報價狀態追蹤
+  priceUpdateCountdown: 10,
+  lastPriceUpdate: null,
+  priceUpdateSuccess: false
 };
 
 // ==========================================
@@ -842,6 +866,7 @@ function fmtMoney(n){ return n==null?'—':'$'+fmt(Math.round(n)) }
 function now(){ const d=new Date(); return d.toTimeString().slice(0,8) }
 function nowFull(){ return new Date().toLocaleString('zh-TW') }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,5) }
+
 function updateClock(){
   const d=new Date();
   document.getElementById('clock').textContent=d.toLocaleDateString('zh-TW')+'  '+d.toTimeString().slice(0,8);
@@ -891,65 +916,146 @@ function setOrderGroup(grp){
 }
 
 // ==========================================
-// 5. Supabase 雲端資料與即時連線 (Realtime)
+// 5. ★ 即時報價核心：Edge Function 觸發 + Realtime 訂閱
 // ==========================================
-async function fetchRealtimePrices() {
+
+// 觸發 Edge Function 向 Yahoo Finance 抓價
+async function triggerPriceUpdate() {
+  const dot = document.getElementById('price-dot');
+  const statusText = document.getElementById('price-status-text');
+
+  // 顯示「更新中」狀態
+  if(dot) dot.className = 'updating';
+  if(statusText) statusText.textContent = '更新中...';
+
+  try {
+    const { data, error } = await supabaseDb.functions.invoke('update-prices');
+    if (error) throw error;
+
+    state.lastPriceUpdate = new Date();
+    state.priceUpdateSuccess = true;
+    const updated = data?.updated ?? 0;
+
+    if(dot) dot.className = 'live';
+    if(statusText) statusText.textContent = `即時 · ${updated} 檔 · ${now()}`;
+    addLog(`📡 Yahoo Finance 報價更新：${updated} 檔商品`, 'success');
+  } catch(e) {
+    state.priceUpdateSuccess = false;
+    if(dot) dot.className = 'error';
+    if(statusText) statusText.textContent = '報價連線異常';
+    console.warn('Edge Function 呼叫異常:', e);
+  }
+
+  // 重置倒數計時
+  state.priceUpdateCountdown = 10;
+}
+
+// 每秒更新倒數計時器
+function tickCountdown() {
+  state.priceUpdateCountdown = Math.max(0, state.priceUpdateCountdown - 1);
+  const el = document.getElementById('sb-countdown');
+  if(el) el.textContent = state.priceUpdateCountdown + 's';
+}
+
+// 從 Supabase 讀取初始靜態資料（啟動時用）
+async function fetchInitialPrices() {
   try {
     const { data, error } = await supabaseDb.from('securities').select('*');
     if (error) throw error;
     data.forEach(item => {
-      if (!state.securities[item.symbol]) {
-         state.securities[item.symbol] = {
-           name: item.name, price: parseFloat(item.price), base: parseFloat(item.base),
-           vol: parseFloat(item.vol), type: item.type, groups: [item.grp]
-         };
-      } else {
-         const s = state.securities[item.symbol];
-         s.price = parseFloat(item.price);
-         s.base = parseFloat(item.base);
-         s.change = s.price - s.base;
-         s.changeRate = (s.change / s.base) * 100;
-      }
+      state.securities[item.symbol] = {
+        name: item.name,
+        price: parseFloat(item.price),
+        base: parseFloat(item.base),
+        vol: parseFloat(item.vol),
+        type: item.type,
+        groups: [item.grp],
+        change: 0,
+        changeRate: 0
+      };
     });
     renderTickers(); updateOrderPriceDisplay(); updateAllMetrics();
-  } catch (error) {
-    console.error("無法獲取即時報價:", error);
-    showToast('雲端資料庫連線異常', 'danger');
+    addLog(`資料庫載入 ${data.length} 檔商品報價`, 'info');
+  } catch(e) {
+    console.error('初始報價載入失敗:', e);
+    showToast('初始報價載入失敗，請重新整理', 'danger');
   }
 }
 
+// ★ 訂閱 Supabase Realtime：securities 更新 + orders 更新
 function setupRealtimeSubscriptions() {
+
+  // ★ 訂閱股價即時更新（Edge Function 寫入後自動推播到這裡）
+  supabaseDb.channel('public:securities')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'securities' }, payload => {
+      const item = payload.new;
+      if (state.securities[item.symbol]) {
+        const s = state.securities[item.symbol];
+        const oldPrice = s.price;
+        const newPrice = parseFloat(item.price);
+
+        // 計算漲跌
+        s.price = newPrice;
+        s.base = parseFloat(item.base) || s.base;
+        s.change = s.price - s.base;
+        s.changeRate = s.base > 0 ? (s.change / s.base) * 100 : 0;
+
+        // 閃爍動畫（漲綠跌紅）
+        if (Math.abs(newPrice - oldPrice) > 0.001) {
+          flashTickerRow(item.symbol, newPrice > oldPrice ? 'up' : 'down');
+        }
+      }
+      renderTickers();
+      updateOrderPriceDisplay();
+      updateAllMetrics();
+    })
+    .subscribe();
+
+  // 訂閱訂單狀態更新
   supabaseDb.channel('public:orders')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
       const newOrder = payload.new;
       if (payload.eventType === 'INSERT') {
         const orderData = {
-           id: newOrder.id, time: newOrder.time, symbol: newOrder.symbol, name: newOrder.name,
-           qty: parseInt(newOrder.qty), side: newOrder.side, price: parseFloat(newOrder.price),
-           amount: parseFloat(newOrder.amount), group: newOrder.grp, status: newOrder.status,
-           comment: newOrder.comment, scorecard: newOrder.scorecard
+          id: newOrder.id, time: newOrder.time, symbol: newOrder.symbol, name: newOrder.name,
+          qty: parseInt(newOrder.qty), side: newOrder.side, price: parseFloat(newOrder.price),
+          amount: parseFloat(newOrder.amount), group: newOrder.grp, status: newOrder.status,
+          comment: newOrder.comment, scorecard: newOrder.scorecard
         };
         state.orders.push(orderData);
         if (orderData.status === 'pending') {
-           state.pendingApproval.push(orderData);
-           showToast(`新訂單進件：${orderData.symbol}`, 'info');
+          state.pendingApproval.push(orderData);
+          showToast(`新訂單進件：${orderData.symbol}`, 'info');
         }
       } else if (payload.eventType === 'UPDATE') {
         const localOrder = state.orders.find(o => o.id === newOrder.id);
         if (localOrder && localOrder.status === 'pending') {
-           localOrder.status = newOrder.status;
-           localOrder.comment = newOrder.comment;
-           state.pendingApproval = state.pendingApproval.filter(x => x.id !== newOrder.id);
-           if (newOrder.status === 'executed') {
-             executeOrder(localOrder);
-             showToast(`訂單已核准成交：${localOrder.symbol}`, 'success');
-           } else if (newOrder.status === 'rejected') {
-             showToast(`訂單遭駁回：${localOrder.symbol}`, 'warn');
-           }
+          localOrder.status = newOrder.status;
+          localOrder.comment = newOrder.comment;
+          state.pendingApproval = state.pendingApproval.filter(x => x.id !== newOrder.id);
+          if (newOrder.status === 'executed') {
+            executeOrder(localOrder);
+            showToast(`訂單已核准成交：${localOrder.symbol}`, 'success');
+          } else if (newOrder.status === 'rejected') {
+            showToast(`訂單遭駁回：${localOrder.symbol}`, 'warn');
+          }
         }
       }
       updateAllMetrics();
-    }).subscribe();
+    })
+    .subscribe();
+}
+
+// 價格閃爍效果
+function flashTickerRow(symbol, direction) {
+  const rows = document.querySelectorAll('.ticker-row');
+  rows.forEach(row => {
+    if (row.querySelector('.ticker-symbol')?.textContent.trim() === symbol) {
+      row.classList.remove('price-flash-up', 'price-flash-down');
+      void row.offsetWidth; // 強制重繪
+      row.classList.add(direction === 'up' ? 'price-flash-up' : 'price-flash-down');
+    }
+  });
 }
 
 // ==========================================
@@ -1006,14 +1112,15 @@ async function submitOrder() {
   const grp = state.currentOrderGroup;
   if(state.groups[grp].frozen){ showToast('已被凍結，無法下單','danger'); closeModal(); return; }
   if(Object.keys(state.scorecardScores).length < 5){ showToast('請完成所有5項計分卡評分','warn'); return; }
-  
+
   const s = state.securities[sym];
   const total = Object.values(state.scorecardScores).reduce((a,b)=>a+b,0);
   const reasons = {
     1:document.getElementById('sc1-reason').value, 2:document.getElementById('sc2-reason').value,
-    3:document.getElementById('sc3-reason').value, 4:document.getElementById('sc4-reason').value, 5:document.getElementById('sc5-reason').value
+    3:document.getElementById('sc3-reason').value, 4:document.getElementById('sc4-reason').value,
+    5:document.getElementById('sc5-reason').value
   };
-  
+
   const orderData = {
     id: uid(), time: now(), symbol: sym, name: s.name, qty: qty, side: side,
     price: s.price, amount: s.price * qty, grp: grp, status: 'pending', comment: '',
@@ -1064,14 +1171,14 @@ function closeReviewModal(){ document.getElementById('review-modal').classList.r
 async function approveOrder() {
   const id = state.currentReviewOrderId;
   const comment = document.getElementById('review-comment').value || '中台核准';
-  const { error } = await supabaseDb.from('orders').update({ status: 'executed', comment: comment }).eq('id', id);
+  const { error } = await supabaseDb.from('orders').update({ status:'executed', comment }).eq('id', id);
   if (!error) { closeReviewModal(); addLog(`中台核准訂單：已推播至前台`,'success'); }
 }
 
 async function rejectOrder() {
   const id = state.currentReviewOrderId;
   const comment = document.getElementById('review-comment').value || '中台駁回';
-  const { error } = await supabaseDb.from('orders').update({ status: 'rejected', comment: comment }).eq('id', id);
+  const { error } = await supabaseDb.from('orders').update({ status:'rejected', comment }).eq('id', id);
   if (!error) { closeReviewModal(); addLog(`中台駁回訂單：已推播至前台`,'warn'); }
 }
 
@@ -1098,24 +1205,36 @@ function executeOrder(order){
 }
 
 // ==========================================
-// 7. 畫面渲染與計算核心 (風控數據全量計算復原)
+// 7. 畫面渲染與計算核心
 // ==========================================
 function updateSymbolOptions(){
   const sel=document.getElementById('order-symbol');
   sel.innerHTML='<option value="">— 選擇商品 —</option>';
   for(const sym in state.securities) {
-    if(state.securities[sym].groups.includes(state.currentOrderGroup)) sel.innerHTML+=`<option value="${sym}">${sym} — ${state.securities[sym].name}</option>`;
+    if(state.securities[sym].groups.includes(state.currentOrderGroup))
+      sel.innerHTML+=`<option value="${sym}">${sym} — ${state.securities[sym].name}</option>`;
   }
 }
+
 function onSymbolChange(){ updateOrderPriceDisplay(); }
+
 function updateOrderPriceDisplay(){
   const sym=document.getElementById('order-symbol').value;
   const qty=parseInt(document.getElementById('order-qty').value)||0;
-  if(!sym){ document.getElementById('order-price-display').value='—'; document.getElementById('order-amount-display').value='—'; return; }
-  document.getElementById('order-price-display').value=fmt(state.securities[sym].price,2);
-  document.getElementById('order-amount-display').value=fmtMoney(state.securities[sym].price*qty);
+  if(!sym){
+    document.getElementById('order-price-display').value='—';
+    document.getElementById('order-amount-display').value='—';
+    return;
+  }
+  const s=state.securities[sym];
+  document.getElementById('order-price-display').value=fmt(s.price,2);
+  document.getElementById('order-amount-display').value=fmtMoney(s.price*qty);
 }
-function selectSecurity(sym){ const sel=document.getElementById('order-symbol'); if([...sel.options].some(o=>o.value===sym)){ sel.value=sym; updateOrderPriceDisplay(); } }
+
+function selectSecurity(sym){
+  const sel=document.getElementById('order-symbol');
+  if([...sel.options].some(o=>o.value===sym)){ sel.value=sym; updateOrderPriceDisplay(); }
+}
 
 function renderTickers(){
   let etfHtml='', stkHtml='';
@@ -1124,15 +1243,15 @@ function renderTickers(){
     const clr=s.changeRate>=0?'var(--green)':'var(--red)';
     const sign=s.changeRate>=0?'▲':'▼';
     const row=`<div class="ticker-row" onclick="selectSecurity('${sym}')">
-      <span class="ticker-symbol">${sym}</span>
+      <span class="ticker-symbol">${sym.replace('.TW','')}</span>
       <span class="ticker-name">${s.name}</span>
       <span class="ticker-price" style="color:${clr}">${fmt(s.price,2)}</span>
-      <span class="ticker-chg" style="color:${clr}">${sign} ${Math.abs(s.changeRate).toFixed(2)}%</span>
+      <span style="color:${clr};font-family:var(--mono);font-size:11px;min-width:60px;text-align:right">${sign} ${Math.abs(s.changeRate).toFixed(2)}%</span>
     </div>`;
     if(s.groups.includes('etf')) etfHtml+=row; else stkHtml+=row;
   }
-  document.getElementById('ticker-etf').innerHTML=etfHtml;
-  document.getElementById('ticker-stock').innerHTML=stkHtml;
+  document.getElementById('ticker-etf').innerHTML=etfHtml||'<div style="padding:12px;color:var(--text3);font-size:12px">載入中...</div>';
+  document.getElementById('ticker-stock').innerHTML=stkHtml||'<div style="padding:12px;color:var(--text3);font-size:12px">載入中...</div>';
 }
 
 function calcNAV(grp){
@@ -1191,18 +1310,18 @@ function updateAllMetrics(){
     const prefix=grp==='etf'?'etf':'stk';
     const hdr=document.getElementById(`${grp==='etf'?'etf':'stock'}-nav-hdr`);
     if(hdr) hdr.textContent=fmtMoney(nav.total);
-    
+
     setText(`sb-${prefix}-dd`,fmtPct(dd),dd>lim*0.8?'var(--red)':dd>lim*0.5?'var(--amber)':'var(--green)');
 
     const retStr=(ret>=0?'+':'')+ret.toFixed(2)+'%';
     setText(`m-${prefix}-nav`,fmtMoney(nav.total));
     setText(`m-${prefix}-ret`,retStr,ret>=0?'var(--green)':'var(--red)');
-    
+
     const ddEl=document.getElementById(`m-${prefix}-dd`);
     if(ddEl){ ddEl.textContent=dd.toFixed(2)+'%'; ddEl.className='metric-val '+(dd>lim*0.8?'down':dd>lim*0.5?'warn':'up'); }
     setText(`m-${prefix}-dd-sub`,`限制: ${lim.toFixed(2)}%`);
     setText(`${prefix}-dd-pct`,`${dd.toFixed(1)}% / ${lim}%`);
-    
+
     const bar=document.getElementById(`${prefix}-dd-bar`);
     if(bar){ bar.style.width=ddPct+'%'; bar.className='risk-bar '+(dd>lim*0.8?'danger':dd>lim*0.5?'warn':''); }
     setText(`${prefix}-sharpe`,sharpe?sharpe:'—');
@@ -1249,6 +1368,7 @@ function updateAllMetrics(){
       forceClose(grp, true);
     }
   }
+
   setText('sb-pending',state.pendingApproval.length,'');
   setText('sb-trades',state.groups.etf.tradeCount+state.groups.stock.tradeCount,'');
   renderMyOrders(); renderApprovalQueue(); renderPositions(); updateComparisonTable();
@@ -1275,7 +1395,7 @@ function renderPositions(){
     const cl=pnl>=0?'up':'down';
     const rcCl=riskContrib>3?'down':riskContrib>1.5?'warn':'up';
     return `<tr>
-      <td><span class="mono">${p.symbol}</span> <span class="text-xs text-muted">${s?s.name:''}</span></td>
+      <td><span class="mono">${p.symbol.replace('.TW','')}</span> <span class="text-xs text-muted">${s?s.name:''}</span></td>
       <td class="mono">${fmt(p.qty)}</td>
       <td class="mono">${fmt(p.avgPrice,p.avgPrice<100?2:0)}</td>
       <td class="mono ${cl}">${fmt(cur,cur<100?2:0)}</td>
@@ -1292,7 +1412,7 @@ function renderApprovalQueue(){
   tbody.innerHTML=state.pendingApproval.map(o=>`<tr>
     <td class="mono text-xs">${o.time}</td>
     <td><span class="badge badge-${o.group}">${o.group==='etf'?'ETF':'個股'}</span></td>
-    <td class="mono">${o.symbol} <span class="text-xs text-muted">${o.name}</span></td>
+    <td class="mono">${o.symbol.replace('.TW','')} <span class="text-xs text-muted">${o.name}</span></td>
     <td><span class="badge badge-${o.side}">${o.side==='buy'?'買入':'賣出'}</span></td>
     <td class="mono">${fmt(o.qty)}</td>
     <td class="mono">${fmtMoney(o.amount)}</td>
@@ -1307,7 +1427,7 @@ function renderMyOrders(){
   tbody.innerHTML=[...state.orders].reverse().slice(0,15).map(o=>`<tr>
     <td class="mono text-xs">${o.time}</td>
     <td><span class="badge badge-${o.group}">${o.group==='etf'?'ETF':'個股'}</span></td>
-    <td class="mono">${o.symbol}</td>
+    <td class="mono">${o.symbol.replace('.TW','')}</td>
     <td><span class="badge badge-${o.side}">${o.side==='buy'?'買':'賣'}</span></td>
     <td class="mono">${fmt(o.qty)}</td>
     <td class="mono">${fmtMoney(o.amount)}</td>
@@ -1336,12 +1456,16 @@ function updateComparisonTable(){
 
 function setText(id,val,color){ const el=document.getElementById(id); if(el){ el.textContent=val; if(color) el.style.color=color; } }
 function addLog(msg, level='info'){ state.logs.push({time:now(),msg,level}); renderLog(); }
-function renderLog(){ const el=document.getElementById('log-list'); if(el) el.innerHTML=[...state.logs].reverse().map(l=>`<div class="log-entry"><span class="log-time">${l.time}</span><div class="log-level ${l.level}"></div><span class="log-msg">${l.msg}</span></div>`).join(''); }
+function renderLog(){
+  const el=document.getElementById('log-list');
+  if(el) el.innerHTML=[...state.logs].reverse().map(l=>`<div class="log-entry"><span class="log-time">${l.time}</span><div class="log-level ${l.level}"></div><span class="log-msg">${l.msg}</span></div>`).join('');
+}
 
 // ==========================================
-// 8. 行政與風控操作 (圖表、報告、情境指令功能補齊)
+// 8. 行政與風控操作
 // ==========================================
 function unfreezeGroup(grp){ state.groups[grp].frozen=false; addLog(`中台解除 <strong>${state.groups[grp].name}</strong> 凍結，前台恢復權限`,'success'); updateAllMetrics(); }
+
 function forceClose(grp, auto=false){
   const g=state.groups[grp]; const positions=[...g.positions];
   for(const pos of positions) if(state.securities[pos.symbol]) g.cash+=state.securities[pos.symbol].price*pos.qty;
@@ -1350,7 +1474,7 @@ function forceClose(grp, auto=false){
   addLog(`🚨 <strong>${g.name}</strong> 強制平倉完成（${reason}），前台權限已凍結`,'danger');
   showToast(`${g.name} 強制平倉完成，前台已凍結`, 'danger');
   state.scenarioLogs.push({ time:now(), text:`強制平倉：${g.name}（${reason}）` });
-  updateAllMetrics(); renderScenarioLog();
+  updateAllMetrics(); renderScenarioLogs();
 }
 
 function settleNAV(grp){
@@ -1386,7 +1510,6 @@ function generateReport(){
   const etfOrders=state.orders.filter(o=>o.group==='etf'); const stkOrders=state.orders.filter(o=>o.group==='stock');
   const etfAvgScore=etfOrders.length?etfOrders.reduce((s,o)=>s+(o.scorecard.total||0),0)/etfOrders.length:0;
   const stkAvgScore=stkOrders.length?stkOrders.reduce((s,o)=>s+(o.scorecard.total||0),0)/stkOrders.length:0;
-  
   const etfBeta=Math.max(5,Math.min(75,60+etfRet)); const stkBeta=Math.max(5,Math.min(75,55+stkRet));
   const etfAlphaPct=Math.max(5,100-etfBeta-20); const stkAlphaPct=Math.max(5,100-stkBeta-20);
 
@@ -1411,7 +1534,7 @@ function generateReport(){
     <div style="font-size:12px;color:var(--text2);line-height:2">
       • ETF 組計分卡均分：<strong>${etfAvgScore.toFixed(1)}/25</strong> | 個股組計分卡均分：<strong>${stkAvgScore.toFixed(1)}/25</strong><br>
       • 風險調整後報酬（夏普值）為雙組最核心競爭性評估指標。<br>
-      • 績效歸因顯示 Alpha 佔比越高，代表交易員的主觀防禦與策略溢價越顯著。
+      • 績效歸因顯示 Alpha 佔比越高，代表交易員的主觀判斷力與策略溢價越顯著。
     </div>
   </div>`;
 }
@@ -1453,7 +1576,7 @@ function execFundChange(){
 }
 
 function resetAll(){
-  if(!confirm('確定要重置所有雲端快取與資料嗎？這將重新整理本地賽局。')) return;
+  if(!confirm('確定要重置所有資料嗎？')) return;
   state.groups.etf={name:'ETF 組',cash:INITIAL_CASH,positions:[],navHistory:[{t:Date.now(),nav:INITIAL_CASH}],frozen:false,leverage:1.0,peakNAV:INITIAL_CASH,maxDrawdown:0,tradeCount:0,returns:[]};
   state.groups.stock={name:'個股組',cash:INITIAL_CASH,positions:[],navHistory:[{t:Date.now(),nav:INITIAL_CASH}],frozen:false,leverage:1.0,peakNAV:INITIAL_CASH,maxDrawdown:0,tradeCount:0,returns:[]};
   state.orders=[]; state.pendingApproval=[]; state.logs=[]; state.scenarioLogs=[];
@@ -1480,19 +1603,29 @@ function updateRiskLimits(){
 }
 
 // ==========================================
-// 9. 初始化啟動
+// 9. ★ 初始化啟動（修改重點在這裡）
 // ==========================================
-function init(){
+async function init() {
+  // 1. 設定 Supabase Realtime 訂閱
   setupRealtimeSubscriptions();
-  fetchRealtimePrices().then(() => {
-    setOrderGroup('etf');
-    updateSymbolOptions();
-    renderTickers();
-    updateAllMetrics();
-    renderLog();
-    addLog('SimTrade Pro 雲端即時協同版已全功能啟動！','info');
-  });
-  setInterval(fetchRealtimePrices, 30000); 
+
+  // 2. 載入初始報價資料
+  await fetchInitialPrices();
+  setOrderGroup('etf');
+  updateSymbolOptions();
+  renderTickers();
+  updateAllMetrics();
+  renderLog();
+  addLog('SimTrade Pro v1.1 啟動 — 即時報價模式已開啟', 'success');
+
+  // 3. 立即觸發一次 Yahoo Finance 抓價
+  await triggerPriceUpdate();
+
+  // 4. ★ 每 10 秒觸發 Edge Function 抓取最新報價
+  setInterval(triggerPriceUpdate, 10000);
+
+  // 5. ★ 每秒更新倒數計時器
+  setInterval(tickCountdown, 1000);
 }
 
 init();
