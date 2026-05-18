@@ -919,23 +919,21 @@ function setOrderGroup(grp){
 // 5. ★ 即時報價核心：Edge Function 觸發 + Realtime 訂閱
 // ==========================================
 
-// 觸發 Edge Function 向 Yahoo Finance 抓價
 async function triggerPriceUpdate() {
   const dot = document.getElementById('price-dot');
   const statusText = document.getElementById('price-status-text');
-
-  // 顯示「更新中」狀態
   if(dot) dot.className = 'updating';
   if(statusText) statusText.textContent = '更新中...';
-
   try {
-    const { data, error } = await supabaseDb.functions.invoke('update-prices');
-    if (error) throw error;
-
+    const res = await fetch('https://gfreljxlgfrqsltswphj.supabase.co/functions/v1/update-prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || res.status);
     state.lastPriceUpdate = new Date();
     state.priceUpdateSuccess = true;
     const updated = data?.updated ?? 0;
-
     if(dot) dot.className = 'live';
     if(statusText) statusText.textContent = `即時 · ${updated} 檔 · ${now()}`;
     addLog(`📡 Yahoo Finance 報價更新：${updated} 檔商品`, 'success');
@@ -943,13 +941,10 @@ async function triggerPriceUpdate() {
     state.priceUpdateSuccess = false;
     if(dot) dot.className = 'error';
     if(statusText) statusText.textContent = '報價連線異常';
-    console.warn('Edge Function 呼叫異常:', e);
+    console.warn('報價更新異常:', e);
   }
-
-  // 重置倒數計時
   state.priceUpdateCountdown = 10;
 }
-
 // 每秒更新倒數計時器
 function tickCountdown() {
   state.priceUpdateCountdown = Math.max(0, state.priceUpdateCountdown - 1);
