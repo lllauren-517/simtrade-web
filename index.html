@@ -929,7 +929,7 @@ async function triggerPriceUpdate() {
   if(statusText) statusText.textContent = '更新中...';
 
   try {
-    const { data, error } = await supabaseDb.functions.invoke('bright-function');
+    const { data, error } = await supabaseDb.functions.invoke('update-prices');
     if (error) throw error;
 
     state.lastPriceUpdate = new Date();
