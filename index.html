@@ -932,7 +932,7 @@ async function triggerPriceUpdate() {
 
   try {
     // ★ 呼叫你部署的 Edge Function，讓伺服器去抓 Yahoo Finance
-    const { data, error } = await supabaseDb.functions.invoke('update-prices');
+    const { data, error } = await supabaseDb.functions.invoke('bright-function');
 
     if (error) throw error;
 
