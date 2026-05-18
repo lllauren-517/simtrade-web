@@ -924,19 +924,21 @@ async function triggerPriceUpdate() {
   const statusText = document.getElementById('price-status-text');
   if(dot) dot.className = 'updating';
   if(statusText) statusText.textContent = '更新中...';
+  
   try {
-    const res = await fetch('https://gfreljxlgfrqsltswphj.supabase.co/functions/v1/update-prices', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error || res.status);
+    // 👑 終極解法：使用 Supabase 內建的 invoke 方法，自動處理 CORS 與金鑰認證！
+    const { data, error } = await supabaseDb.functions.invoke('update-prices');
+    
+    if(error) throw new Error(error.message);
+    
     state.lastPriceUpdate = new Date();
     state.priceUpdateSuccess = true;
     const updated = data?.updated ?? 0;
+    
     if(dot) dot.className = 'live';
     if(statusText) statusText.textContent = `即時 · ${updated} 檔 · ${now()}`;
     addLog(`📡 Yahoo Finance 報價更新：${updated} 檔商品`, 'success');
+    
   } catch(e) {
     state.priceUpdateSuccess = false;
     if(dot) dot.className = 'error';
