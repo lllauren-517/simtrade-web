@@ -924,27 +924,58 @@ async function triggerPriceUpdate() {
   const statusText = document.getElementById('price-status-text');
   if(dot) dot.className = 'updating';
   if(statusText) statusText.textContent = '更新中...';
-  
-  try {
-    // 👑 終極解法：使用 Supabase 內建的 invoke 方法，自動處理 CORS 與金鑰認證！
-    const { data, error } = await supabaseDb.functions.invoke('update-prices');
-    
-    if(error) throw new Error(error.message);
-    
+
+  const symbols = Object.keys(state.securities);
+  if(!symbols.length){
+    if(dot) dot.className = 'error';
+    state.priceUpdateCountdown = 10;
+    return;
+  }
+
+  let updated = 0;
+
+  await Promise.all(symbols.map(async (symbol) => {
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&range=1d`;
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`;
+      const res = await fetch(proxyUrl);
+      const json = await res.json();
+      const meta = json?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice ?? meta?.previousClose;
+
+      if(price && price > 0){
+        const s = state.securities[symbol];
+        if(!s) return;
+        const oldPrice = s.price;
+        const newPrice = parseFloat(price.toFixed(2));
+        s.price = newPrice;
+        s.change = s.price - s.base;
+        s.changeRate = s.base > 0 ? (s.change / s.base) * 100 : 0;
+        if(Math.abs(newPrice - oldPrice) > 0.001){
+          flashTickerRow(symbol, newPrice > oldPrice ? 'up' : 'down');
+        }
+        updated++;
+      }
+    } catch(e) {
+      console.warn(`${symbol} 報價抓取失敗:`, e);
+    }
+  }));
+
+  if(updated > 0){
+    renderTickers();
+    updateOrderPriceDisplay();
+    updateAllMetrics();
     state.lastPriceUpdate = new Date();
     state.priceUpdateSuccess = true;
-    const updated = data?.updated ?? 0;
-    
     if(dot) dot.className = 'live';
     if(statusText) statusText.textContent = `即時 · ${updated} 檔 · ${now()}`;
     addLog(`📡 Yahoo Finance 報價更新：${updated} 檔商品`, 'success');
-    
-  } catch(e) {
+  } else {
     state.priceUpdateSuccess = false;
     if(dot) dot.className = 'error';
     if(statusText) statusText.textContent = '報價連線異常';
-    console.warn('報價更新異常:', e);
   }
+
   state.priceUpdateCountdown = 10;
 }
 // 每秒更新倒數計時器
